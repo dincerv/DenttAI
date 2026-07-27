@@ -1,0 +1,119 @@
+================================================================================
+APPOINTMENT SERVICE - YAPILAN DEĞİŞİKLİKLER ÖZETİ
+================================================================================
+Dosya: services/appointment-service/app/services/appointment_service.py
+Tarih: 24 Mayıs 2026
+
+================================================================================
+1. YENİ HELPER FONKSİYON: _check_appointment_overlap
+================================================================================
+Konum: logger tanımından sonra (line 26)
+
+Amaç: Aynı hekimde belirtilen zaman aralığında çakışan randevu var mı kontrol etmek
+
+Parametreler:
+  - doctor_id (UUID): Hekim kimliği
+  - scheduled_at (datetime): Randevu başlama saati
+  - duration_minutes (int): Randevu süresi (dakika cinsinden)
+  - clinic_id (UUID): Klinik kimliği
+  - db (AsyncSession): Veritabanı session'ı
+  - exclude_appointment_id (UUID | None): Kontrol dışında bırakılacak randevu kimliği
+    (güncelleme işlemlerinde mevcut randevuyu hariç tutmak için)
+
+Dönüş Değeri: bool
+  - True: Çakışma bulundu
+  - False: Çakışma bulunamadı
+
+SQL Sorgusu:
+  - İptal edilmemiş randevuları kontrol eder
+  - Hekim ve klinik filtrelemesi yapar
+  - PostgreSQL INTERVAL kullanarak zaman aralığı hesaplaması yapar
+  - Exclude_id parametresiyle geçilen randevuyu kontrol dışı bırakır
+
+================================================================================
+2. GÜNCELLEME: create_appointment() Fonksiyonu
+================================================================================
+Konum: Line 69 (önceki line 26)
+
+Yapılan Değişiklikler:
+
+a) Overlap Kontrol Eklendi:
+   - _check_appointment_overlap() fonksiyonu çağrılır
+   - Eğer çakışma bulunursa HTTPException fırlatılır
+   - Status Code: 409 Conflict
+   - Hata Mesajı: "Bu zaman aralığında hekim zaten bir randevusu var. 
+                    Lütfen başka bir zaman seçiniz."
+
+b) duration_minutes Parametresi Eklendi:
+   - data.duration_minutes, appointment objesine atanır
+   - data.scheduled_at ile beraber kullanılan süreyi temsil eder
+
+Kod Akışı:
+  1. data.duration_minutes ile overlap kontrolü yapılır
+  2. Çakışma varsa 409 hatası fırlatılır
+  3. Çakışma yoksa Appointment objesi oluşturulur
+  4. duration_minutes'ı da içerir
+  5. DB'ye eklenir ve response döndürülür
+
+================================================================================
+3. GÜNCELLEME: update_appointment() Fonksiyonu
+================================================================================
+Konum: Line 216 (önceki line 160)
+
+Yapılan Değişiklikler:
+
+a) Overlap Kontrol Mantığı Eklendi:
+   - Eğer data.scheduled_at VEYA data.duration_minutes güncellemesi varsa:
+     * Yeni zamanlar hesaplanır (güncellenen veya mevcut)
+     * _check_appointment_overlap() çağrılır
+     * exclude_appointment_id parametresiyle mevcut randevu kontrol dışı bırakılır
+   
+   - Çakışma bulunursa:
+     * HTTPException (409 Conflict) fırlatılır
+     * Hata Mesajı: "Bu zaman aralığında hekim zaten bir randevusu var. 
+                     Lütfen başka bir zaman seçiniz."
+     * Güncelleme yapılmaz
+
+b) Zaman Aralığı Hesaplaması:
+   new_scheduled_at = data.scheduled_at or appointment.scheduled_at
+   new_duration_minutes = data.duration_minutes or appointment.duration_minutes
+
+c) Exclude Mekanizması:
+   - Mevcut randevunun kendi ID'si exclude_appointment_id olarak geçilir
+   - Böylece kontrol sırasında kendisiyle çakışma yok sayılır
+
+Diğer Fonksiyonalite:
+  - status güncellemeli tespitler aynı şekilde çalışmaya devam eder
+  - WaitlistEngine entegrasyonu etkilenmez
+  - İptal event'i, Teyit event'i ve Post-Op event'i tetiklemesi değişmez
+
+================================================================================
+ÖZET
+================================================================================
+
+Eklenen Metodoloji:
+  ✓ Hekime ait aynı zaman aralığında birden fazla randevu atamasını engeller
+  ✓ 409 Conflict status code ile uygun hata yönetimi
+  ✓ Güncelleme işlemlerinde mevcut randevuyu hariç tutar
+  ✓ PostgreSQL INTERVAL fonksiyonuyla doğru zaman hesaplaması
+
+Etkilenen Fonksiyonlar:
+  1. _check_appointment_overlap() - YENİ
+  2. create_appointment()
+  3. update_appointment()
+
+Etkilenmeyen Fonksiyonlar:
+  - list_appointments()
+  - get_appointment()
+  - delete_appointment()
+  - _handle_cancellation()
+  - _fetch_or_404()
+
+Test Senaryoları:
+  1. Çakışan randevu oluşturmaya çalış → 409 hatası beklenir
+  2. Mevcut randevuyu aynı zamanla güncelle → başarılı olur
+  3. Mevcut randevuyu başka bir çakışan zamanla güncelle → 409 hatası
+  4. İptal olan randevuların zamanında yeni randevu oluştur → başarılı
+  5. duration_minutes değiştir ve overlap kontrolü yap
+
+================================================================================

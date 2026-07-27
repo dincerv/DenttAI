@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+: "${MONITORING_BASIC_AUTH_USER:?MONITORING_BASIC_AUTH_USER is required}"
+: "${MONITORING_BASIC_AUTH_PASSWORD:?MONITORING_BASIC_AUTH_PASSWORD is required}"
+
+htpasswd -bc /etc/nginx/.htpasswd "$MONITORING_BASIC_AUTH_USER" "$MONITORING_BASIC_AUTH_PASSWORD" >/dev/null 2>&1
+
+exec "$@"

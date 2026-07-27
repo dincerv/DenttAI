@@ -1,0 +1,60 @@
+# ============================================================
+# DentAI Flow — Azure DevOps CD Pipeline (Deploy)
+# Sadece main branch merge sonrası çalışır.
+# Sunucuya SSH ile bağlanır, deploy.sh çalıştırır.
+# ============================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: DentAI-Production  # Azure DevOps Variable Group (SSH_*, PROD_* secrets)
+
+stages:
+
+- stage: Deploy
+  displayName: 'Production Deploy'
+  jobs:
+  - deployment: DeployToProduction
+    displayName: 'Deploy to Production Server'
+    environment: 'production'  # Approval gate burada tanımlanır
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: InstallSSHKey@0
+            inputs:
+              knownHostsEntry: $(KNOWN_HOSTS)
+              sshPublicKey: $(SSH_PUBLIC_KEY)
+              sshKeySecureFile: 'dentai-deploy-key'
+
+          - script: |
+              ssh -o StrictHostKeyChecking=no $(SSH_USER)@$(SSH_HOST) \
+                "cd /opt/daf && bash scripts/deploy.sh"
+            displayName: 'SSH Deploy via deploy.sh'
+
+- stage: PostDeploy
+  displayName: 'Post-Deploy Verification'
+  dependsOn: Deploy
+  jobs:
+  - job: HealthCheck
+    displayName: 'Remote Health Check'
+    steps:
+    - script: |
+        BASE_URL="${API_BASE_URL:-https://$(API_DOMAIN)}"
+        for endpoint in /health /api/auth/health /api/appointments/health /api/notifications/health /api/inventory/health /api/analytics/health /api/integration/health; do
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 15 "${BASE_URL}${endpoint}" || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "✓ ${endpoint}: OK"
+          else
+            echo "✗ ${endpoint}: FAIL (${STATUS})"
+            exit 1
+          fi
+        done
+        echo "✓ Tüm health endpoint'ler başarılı."
+      displayName: 'Verify all health endpoints'

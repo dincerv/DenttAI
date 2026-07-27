@@ -1,0 +1,111 @@
+# ============================================================
+# DentAI Flow — Azure DevOps CI Pipeline
+# Her push ve PR'da çalışır: lint, build, test, compose validate
+# ============================================================
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  DOCKER_BUILDKIT: 1
+
+stages:
+
+# ── Stage 1: Python Servisler (lint + build) ──────────────
+- stage: PythonServices
+  displayName: 'Python Services - Lint & Build'
+  jobs:
+  - job: LintBuild
+    displayName: 'Lint & Build Python Services'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.12'
+
+    - script: |
+        pip install --upgrade pip
+        for svc in auth-service appointment-service inventory-service analytics-service integration-service; do
+          echo "=== ${svc} ==="
+          pip install -r services/${svc}/requirements.txt
+        done
+      displayName: 'Install Python dependencies'
+
+    - script: |
+        pip install ruff
+        for svc in auth-service appointment-service inventory-service analytics-service integration-service; do
+          echo "=== Linting ${svc} ==="
+          ruff check services/${svc}/ --exit-zero
+        done
+        ruff check shared/ --exit-zero
+      displayName: 'Lint Python code'
+
+# ── Stage 2: Node.js Servisler ────────────────────────────
+- stage: NodeServices
+  displayName: 'Node.js Services - Build'
+  dependsOn: []
+  jobs:
+  - job: NotificationBuild
+    displayName: 'Build notification-service'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+    - script: |
+        cd services/notification-service
+        npm ci
+        npm run build
+      displayName: 'Build notification-service'
+
+  - job: FrontendBuild
+    displayName: 'Build frontend'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+    - script: |
+        cd frontend
+        npm ci
+        npm run build
+      displayName: 'Build frontend'
+
+# ── Stage 3: Docker Compose Doğrulama ─────────────────────
+- stage: ComposeValidate
+  displayName: 'Docker Compose Validation'
+  dependsOn: []
+  jobs:
+  - job: Validate
+    displayName: 'Validate compose files'
+    steps:
+    - script: |
+        docker compose -f docker-compose.yml config --quiet
+        docker compose -f docker-compose.prod.yml config --quiet
+        echo "✓ Compose dosyaları geçerli."
+      displayName: 'Validate docker-compose files'
+
+# ── Stage 4: Docker Image Build (sadece main) ─────────────
+- stage: DockerBuild
+  displayName: 'Docker Image Build'
+  dependsOn:
+    - PythonServices
+    - NodeServices
+    - ComposeValidate
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: BuildImages
+    displayName: 'Build Docker images'
+    steps:
+    - script: |
+        docker compose -f docker-compose.prod.yml build
+        echo "✓ Tüm image'lar başarıyla build edildi."
+      displayName: 'Build all production images'

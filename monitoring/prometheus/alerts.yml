@@ -1,0 +1,44 @@
+groups:
+  - name: dentai-webhook-alerts
+    rules:
+      - alert: DentAIWebhookHighP95Latency
+        expr: histogram_quantile(0.95, sum by (le) (rate(dentai_webhook_request_duration_seconds_bucket{path="/api/whatsapp/webhook"}[5m]))) > 1.2
+        for: 10m
+        labels:
+          severity: warning
+          service: integration-service
+        annotations:
+          summary: "Webhook p95 latency is high"
+          description: "Webhook p95 latency exceeded 1.2s for 10 minutes."
+
+      - alert: DentAIWebhookErrorRateHigh
+        expr: sum(rate(dentai_webhook_requests_total{path="/api/whatsapp/webhook",status=~"5.."}[5m])) / clamp_min(sum(rate(dentai_webhook_requests_total{path="/api/whatsapp/webhook"}[5m])), 0.001) > 0.03
+        for: 5m
+        labels:
+          severity: critical
+          service: integration-service
+        annotations:
+          summary: "Webhook error rate is high"
+          description: "Webhook 5xx ratio is over 3% for 5 minutes."
+
+  - name: dentai-celery-alerts
+    rules:
+      - alert: DentAICeleryQueueBacklog
+        expr: max by (queue) (dentai_celery_queue_depth{queue=~"whatsapp|appointments"}) > 200
+        for: 10m
+        labels:
+          severity: warning
+          service: celery
+        annotations:
+          summary: "Celery queue backlog is growing"
+          description: "Queue {{ $labels.queue }} depth has been above 200 for 10 minutes."
+
+      - alert: DentAICeleryRetrySpike
+        expr: sum(increase(dentai_celery_task_processed_total{status="retry"}[15m])) > 20
+        for: 10m
+        labels:
+          severity: warning
+          service: celery
+        annotations:
+          summary: "Celery retry volume increased"
+          description: "More than 20 retries observed in the last 15 minutes."

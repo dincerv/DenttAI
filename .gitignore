@@ -1,0 +1,24 @@
+# .env içindeki gizli bilgileri kesinlikle commit etme
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Node.js
+node_modules/
+dist/
+.next/
+
+# Build outputs
+*.egg-info/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

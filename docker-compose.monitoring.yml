@@ -1,0 +1,166 @@
+# ============================================================
+# DentAI Flow — Monitoring & Reverse Proxy Stack
+# Ana docker-compose ile ayrı çalışır.
+# Kullanım: docker compose -f docker-compose.monitoring.yml up -d
+# ============================================================
+
+services:
+
+  # ─────────────────────────────────────────
+  # Nginx — Monitoring Reverse Proxy
+  # ─────────────────────────────────────────
+  monitoring-proxy:
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile
+    container_name: dentai_monitoring_proxy
+    restart: always
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      MONITORING_BASIC_AUTH_USER: ${MONITORING_BASIC_AUTH_USER:?MONITORING_BASIC_AUTH_USER must be set}
+      MONITORING_BASIC_AUTH_PASSWORD: ${MONITORING_BASIC_AUTH_PASSWORD:?MONITORING_BASIC_AUTH_PASSWORD must be set}
+    depends_on:
+      - uptime-kuma
+      - netdata
+      - prometheus
+      - alertmanager
+      - grafana
+    networks:
+      - dentai_network_prod
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────
+  # Uptime Kuma — Servis izleme & alerting
+  # ─────────────────────────────────────────
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: dentai_uptime_kuma
+    restart: always
+    volumes:
+      - uptime_kuma_data:/app/data
+    expose:
+      - "3001"
+    networks:
+      - dentai_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────
+  # Netdata — Sunucu metrikleri (CPU, RAM, Disk, Network)
+  # ─────────────────────────────────────────
+  netdata:
+    image: netdata/netdata:stable
+    container_name: dentai_netdata
+    restart: always
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - netdata_data:/var/lib/netdata
+    expose:
+      - "19999"
+    networks:
+      - dentai_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: dentai_prometheus
+    restart: always
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    expose:
+      - "9090"
+    networks:
+      - dentai_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  alertmanager:
+    build:
+      context: ./monitoring/alertmanager
+      dockerfile: Dockerfile
+    container_name: dentai_alertmanager
+    restart: always
+    environment:
+      ALERTMANAGER_EMAIL_TO: ${ALERTMANAGER_EMAIL_TO:?ALERTMANAGER_EMAIL_TO must be set}
+      ALERTMANAGER_EMAIL_FROM: ${ALERTMANAGER_EMAIL_FROM:?ALERTMANAGER_EMAIL_FROM must be set}
+      ALERTMANAGER_SMTP_SMARTHOST: ${ALERTMANAGER_SMTP_SMARTHOST:?ALERTMANAGER_SMTP_SMARTHOST must be set}
+      ALERTMANAGER_SMTP_AUTH_USERNAME: ${ALERTMANAGER_SMTP_AUTH_USERNAME:?ALERTMANAGER_SMTP_AUTH_USERNAME must be set}
+      ALERTMANAGER_SMTP_AUTH_PASSWORD: ${ALERTMANAGER_SMTP_AUTH_PASSWORD:?ALERTMANAGER_SMTP_AUTH_PASSWORD must be set}
+      ALERTMANAGER_SMTP_REQUIRE_TLS: ${ALERTMANAGER_SMTP_REQUIRE_TLS:-true}
+    expose:
+      - "9093"
+    networks:
+      - dentai_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: dentai_grafana
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_SERVER_ROOT_URL: http://localhost:8090/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    expose:
+      - "3000"
+    networks:
+      - dentai_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  uptime_kuma_data:
+  netdata_data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+
+networks:
+  dentai_network_prod:
+    external: true
+    name: ${MONITORING_NETWORK_NAME:-dentai_network}

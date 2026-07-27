@@ -1,0 +1,362 @@
+version: '3.9'
+
+# ============================================================
+# DentAI Flow — Production Docker Compose
+#
+# Geliştirme compose'undan farklar:
+#   • restart: always  (daima yeniden başla)
+#   • JSON-file loglama, rotasyon limitleri
+#   • deploy.resources ile bellek limitleri
+#   • Dahili servisler dışa PORT açmıyor (sadece gateway + frontend)
+#   • Tüm servislerde ENVIRONMENT: production
+# ============================================================
+
+services:
+
+  # ─────────────────────────────────────────
+  # INFRASTRUCTURE
+  # ─────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: dentai_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./shared/db/init:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "5432"
+    networks:
+      - dentai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  redis:
+    image: redis:7-alpine
+    container_name: dentai_redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD} --save 60 1 --loglevel warning
+    expose:
+      - "6379"
+    networks:
+      - dentai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: dentai_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    expose:
+      - "5672"
+    networks:
+      - dentai-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # ─────────────────────────────────────────
+  # MICROSERVICES
+  # ─────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: dentai_auth
+    restart: always
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+      SERVICE_PORT: 8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8001"
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  appointment-service:
+    build:
+      context: ./services/appointment-service
+      dockerfile: Dockerfile
+    container_name: dentai_appointment
+    restart: always
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/
+      SERVICE_PORT: 8002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    expose:
+      - "8002"
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: dentai_notification
+    restart: always
+    environment:
+      ENVIRONMENT: production
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY}
+      WHATSAPP_MOCK: ${WHATSAPP_MOCK:-false}
+      SERVICE_PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    expose:
+      - "3001"
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile
+    container_name: dentai_inventory
+    restart: always
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
+      SERVICE_PORT: 8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8003"
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: dentai_analytics
+    restart: always
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/4
+      SERVICE_PORT: 8004
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8004"
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  integration-service:
+    build:
+      context: ./services/integration-service
+      dockerfile: Dockerfile
+    container_name: dentai_integration
+    restart: always
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_PORT: 8005
+      IMPORT_BATCH_SIZE: 200
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8005"
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # ─────────────────────────────────────────
+  # API GATEWAY (Nginx)
+  # ─────────────────────────────────────────
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: dentai_gateway
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - auth-service
+      - appointment-service
+      - notification-service
+      - inventory-service
+      - analytics-service
+      - integration-service
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  # ─────────────────────────────────────────
+  # FRONTEND (Next.js)
+  # ─────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dentai_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
+      NODE_ENV: production
+    depends_on:
+      - gateway
+    networks:
+      - dentai-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+# ─────────────────────────────────────────
+# VOLUMES & NETWORKS
+# ─────────────────────────────────────────
+
+volumes:
+  postgres_data:
+    name: dentai_postgres_data_prod
+
+networks:
+  dentai-network:
+    name: dentai_network_prod
+    driver: bridge
