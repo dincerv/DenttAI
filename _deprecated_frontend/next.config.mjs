@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Sadece Docker build'de standalone. Vercel'de ASLA açma.
+  // Deprecated duplicate of ui/. Vercel'de deploy etme.
   ...(process.env.DOCKER_STANDALONE === '1' ? { output: 'standalone' } : {}),
 };
 

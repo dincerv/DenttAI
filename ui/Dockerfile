@@ -11,6 +11,7 @@ COPY . .
 # NEXT_PUBLIC_* değişkenleri build anında sabitlenir — ARG olarak geçmek gerekir
 ARG NEXT_PUBLIC_API_URL=http://localhost:8081/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV DOCKER_STANDALONE=1
 RUN npm run build
 
 # ── Production image ──────────────────────────────────────
