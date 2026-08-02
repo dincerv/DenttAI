@@ -1,0 +1,86 @@
+---
+description: Mimari prensipler ve servis iletişim kuralları. Yeni özellik eklerken veya mevcut yapıyı değiştirirken uygulanır.
+globs: 
+alwaysApply: true
+---
+
+# DentAI Flow — Mimari Kurallar
+
+## Katmanlı Mimari (Layered Architecture)
+
+Her mikroservis aşağıdaki katman yapısına uymalıdır:
+
+```
+routers/          → HTTP endpoint tanımları (thin controller)
+  ├── schemas/    → Pydantic request/response modelleri
+services/         → İş mantığı (business logic)
+models/           → SQLAlchemy ORM modelleri
+core/
+  ├── config.py   → Environment variables (Pydantic Settings)
+  ├── database.py → Engine, session factory
+  └── security.py → JWT, bcrypt (sadece auth-service)
+tasks/            → Celery async task'ları (sadece integration-service)
+providers/        → Dış servis client'ları (WhatsApp, LLM, PMS)
+```
+
+### Kurallar
+
+1. **Router'lar ince olmalı** — sadece request parse, service çağrısı, response serialize. İş mantığı ASLA router'da olmaz.
+2. **Service → Service bağımlılığı doğrudan olmaz** — servisler arası iletişim yalnızca RabbitMQ event'leri veya gateway HTTP çağrıları üzerinden.
+3. **Shared modüller** (`shared/`) servisler arasında ortak kullanılan utility'lerdir: `auth_middleware.py`, `csrf_protection.py`, `rate_limiter.py`, DB init/migration SQL dosyaları.
+
+## Frontend Katman Yapısı
+
+```
+src/
+├── app/              → Next.js App Router sayfaları (route tanımı + minimal JSX)
+├── components/
+│   ├── ui/           → Primitif bileşenler (Button, Input, Modal, Card, Select)
+│   ├── layout/       → Sidebar, Topbar, RouteGuard, Forbidden
+│   └── [feature]/    → Özellik bazlı bileşenler (dashboard/, appointments/, inventory/)
+├── hooks/            → Custom React hook'ları (veri çekme + local state)
+├── context/          → React Context provider'ları (Auth, Permission)
+├── lib/              → Utility'ler (api-client, auth token, cn helper)
+├── types/            → TypeScript tip tanımları
+└── services/         → (YENİ) API çağrı fonksiyonları — hook'lardan ayır
+```
+
+### Frontend Kuralları
+
+1. **Sayfa dosyaları 300 satırı geçmemeli** — büyük sayfaları feature bileşenlerine parçala.
+2. **İş mantığı bileşen içinde olmaz** — API çağrıları `hooks/` veya `services/` katmanında yaşar.
+3. **Tüm HTTP istekleri `apiClient`** (`src/lib/api-client.ts`) üzerinden yapılır — ASLA doğrudan `fetch('/api/...')` kullanma.
+4. **Gateway'de route yoksa frontend'den çağırma** — önce `gateway/routes.conf`'a ekle.
+
+## Servis İletişim Matrisi
+
+```
+appointment-service  ──RabbitMQ──►  notification-service
+                                        │
+                                        ▼
+                                   WhatsApp (Meta API / mock)
+                                   
+integration-service  ──Celery──►  WhatsApp webhook işleme
+                     ──Celery──►  Post-op follow-up
+                     ──HTTP──►    PMS (DentSoft, Dr.Dentes)
+
+analytics-service    ──HTTP──►    Gemini / OpenAI (LLM)
+
+frontend (ui/)       ──HTTP──►    gateway ──proxy──► tüm servisler
+```
+
+## Yeni Özellik Ekleme Akışı
+
+1. Hangi servisin sorumluluğunda olduğunu belirle (üstteki tabloya bak)
+2. Backend: `routers/` + `services/` + gerekirse `models/` + migration SQL
+3. Gateway: `routes.conf`'a yeni route ekle
+4. Frontend: `hooks/` veya `services/` + ilgili bileşen
+5. Docker: Gerekirse `docker-compose.yml`'a yeni servis veya volume ekle
+
+## Anti-Pattern'ler (YAPMA)
+
+- Next.js'ten doğrudan DB'ye bağlanma
+- Frontend'e `.env` içinde backend DB URL koyma
+- Servisler arası doğrudan HTTP çağrısı (gateway bypass) — RabbitMQ veya gateway üzerinden git
+- Tek bir servise birden fazla domain sorumluluğu yükleme
+- `frontend/` veya `backend/` klasörlerinde değişiklik yapma — duplicate

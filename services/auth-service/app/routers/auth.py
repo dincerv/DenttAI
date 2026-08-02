@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, status, Request, Response, Cookie, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.schemas.auth import (
@@ -63,6 +64,11 @@ async def register(
     data: ClinicRegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ClinicRegisterResponse:
+    if not settings.ALLOW_PUBLIC_REGISTER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is disabled",
+        )
     return await register_clinic(data, db)
 
 

@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS clinics (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- RLS yardımcı fonksiyonu — policy'lerden ÖNCE tanımlanmalı
+CREATE OR REPLACE FUNCTION current_clinic_id() RETURNS UUID AS $$
+BEGIN
+    RETURN NULLIF(current_setting('app.current_clinic_id', TRUE), '')::UUID;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 -- ── Kullanıcı rolleri ────────────────────────────────────
 CREATE TYPE user_role AS ENUM ('super_admin', 'owner', 'doctor', 'assistant');
 
@@ -152,13 +159,7 @@ CREATE TABLE IF NOT EXISTS cycle_materials (
 -- Her tablo için RLS aktif edilir.
 -- app.current_clinic_id değeri Auth Middleware tarafından her bağlantıda
 -- SET LOCAL app.current_clinic_id = '<uuid>' şeklinde iletilir.
--- Bu değeri okuyacak yardımcı fonksiyon:
-
-CREATE OR REPLACE FUNCTION current_clinic_id() RETURNS UUID AS $$
-BEGIN
-    RETURN NULLIF(current_setting('app.current_clinic_id', TRUE), '')::UUID;
-END;
-$$ LANGUAGE plpgsql STABLE;
+-- current_clinic_id() fonksiyonu dosyanın başında tanımlanır.
 
 -- ─── Tablolarda RLS aktif ────────────────────────────────
 ALTER TABLE users            ENABLE ROW LEVEL SECURITY;

@@ -1,10 +1,8 @@
 # ============================================================
-# DentAI Flow -- Two-Tier Compose (UI + Backend)
+# DentAI Flow — Geliştirme Docker Compose
 #
-# Hedef:
-# - Calisma ortaminda yalnizca 2 uygulama servisi calistirmak: ui + backend
-# - Mikroservis kodlarini klasor bazinda oldugu gibi korumak
-# - Ileride tekrar ayri mikroservis deployment'ina gecisi kolay tutmak
+# UI (3000) + Nginx Gateway (8081) + mikroservisler
+# Build context: repo kökü (Dockerfile'lar shared/ kopyalar)
 # ============================================================
 
 services:
@@ -18,13 +16,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dentai_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/shared/db/init:/docker-entrypoint-initdb.d:ro
+      - ./shared/db/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     networks:
       - dentai-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dentai}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dentai} -d ${POSTGRES_DB:-dentai_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -62,51 +60,45 @@ services:
       timeout: 10s
       retries: 5
 
-  backend:
+  auth-service:
     build:
       context: .
-      dockerfile: backend/Dockerfile
-    container_name: dentai_backend
+      dockerfile: services/auth-service/Dockerfile
+    container_name: dentai_auth
     restart: unless-stopped
-    ports:
-      - "8081:80"
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      POSTGRES_USER: ${POSTGRES_USER:-dentai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dentai_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-dentai_db}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
-      RABBITMQ_USER: ${RABBITMQ_USER:-dentai}
-      RABBITMQ_PASS: ${RABBITMQ_PASS:-rabbitmq_secret}
-      SERVICE_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
-      CELERY_BACKEND_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-dentai}:${RABBITMQ_PASS:-rabbitmq_secret}@rabbitmq:5672/
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
       JWT_ALGORITHM: HS256
       JWT_EXPIRE_MINUTES: 60
-      IMPORT_BATCH_SIZE: ${IMPORT_BATCH_SIZE:-200}
-      AI_PROVIDER: ${ANALYTICS_AI_PROVIDER:-gemini}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${WHATSAPP_LLM_MODEL:-gemini-1.5-flash}
-      ANALYTICS_GEMINI_API_KEY: ${ANALYTICS_GEMINI_API_KEY:-${GEMINI_API_KEY:-}}
-      ANALYTICS_GEMINI_MODEL: ${ANALYTICS_GEMINI_MODEL:-gemini-1.5-pro}
-      LLM_PROVIDER: ${WHATSAPP_LLM_PROVIDER:-gemini}
-      LLM_MODEL: ${WHATSAPP_LLM_MODEL:-gemini-1.5-flash}
-      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
-      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
-      WHATSAPP_MOCK: ${WHATSAPP_MOCK:-true}
-      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
-      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
-      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-dentai_webhook_secret_token}
+      ALLOW_PUBLIC_REGISTER: ${ALLOW_PUBLIC_REGISTER:-false}
+      SERVICE_PORT: 8001
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8001"
+    networks:
+      - dentai-network
+
+  appointment-service:
+    build:
+      context: .
+      dockerfile: services/appointment-service/Dockerfile
+    container_name: dentai_appointment
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/1
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-dentai}:${RABBITMQ_PASS:-rabbitmq_secret}@rabbitmq:5672/
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
+      SERVICE_PORT: 8002
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,13 +106,157 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    expose:
+      - "8002"
+    networks:
+      - dentai-network
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
+    container_name: dentai_inventory
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/3
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
+      SERVICE_PORT: 8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8003"
+    networks:
+      - dentai-network
+
+  analytics-service:
+    build:
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
+    container_name: dentai_analytics
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/4
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      SERVICE_PORT: 8004
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8004"
+    networks:
+      - dentai-network
+
+  integration-service:
+    build:
+      context: .
+      dockerfile: services/integration-service/Dockerfile
+    container_name: dentai_integration
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
+      CELERY_BACKEND_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
+      WHATSAPP_MOCK: ${WHATSAPP_MOCK:-true}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      IMPORT_BATCH_SIZE: ${IMPORT_BATCH_SIZE:-200}
+      SERVICE_PORT: 8005
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8005"
+    networks:
+      - dentai-network
+
+  whatsapp-ingestion-service:
+    build:
+      context: .
+      dockerfile: services/whatsapp-ingestion-service/Dockerfile
+    container_name: dentai_whatsapp_ingestion
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/6
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      SERVICE_PORT: 8010
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8010"
+    networks:
+      - dentai-network
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: dentai_notification
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-dentai}:${RABBITMQ_PASS:-rabbitmq_secret}@rabbitmq:5672/
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/2
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
+      WHATSAPP_MOCK: ${WHATSAPP_MOCK:-true}
+      SERVICE_PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    expose:
+      - "3001"
+    networks:
+      - dentai-network
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: dentai_gateway
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      - auth-service
+      - appointment-service
+      - inventory-service
+      - analytics-service
+      - integration-service
+      - whatsapp-ingestion-service
+      - notification-service
     networks:
       - dentai-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost/health || exit 1"]
-      interval: 20s
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 8
       start_period: 30s
 
   ui:
@@ -136,7 +272,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8081/api
     depends_on:
-      backend:
+      gateway:
         condition: service_healthy
     networks:
       - dentai-network

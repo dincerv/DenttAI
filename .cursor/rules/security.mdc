@@ -1,0 +1,113 @@
+---
+description: Güvenlik kuralları — kimlik doğrulama, yetkilendirme ve hassas veri yönetimi. Auth, middleware ve config dosyaları düzenlenirken uygulanır.
+globs: "**/auth*,**/security*,**/middleware*,**/config*,**/.env*"
+alwaysApply: false
+---
+
+# DentAI Flow — Güvenlik Kuralları
+
+## Kimlik Doğrulama Mimarisi
+
+```
+Kullanıcı → POST /auth/login → auth-service → JWT (access + refresh)
+                                                    │
+                                         access: sessionStorage (kısa ömür)
+                                         refresh: httpOnly cookie (30 gün)
+                                                    │
+Frontend → apiClient → Authorization: Bearer <access_token> → Gateway → Backend
+                                                    │
+                                         401? → POST /auth/refresh → yeni access token
+```
+
+## Temel Güvenlik Kuralları
+
+### 1. Secret Yönetimi
+
+- **Kaynak kodda secret, şifre, API key ASLA hardcode etme.**
+- Config dosyalarında default secret değeri KOYMA — boş bırak veya startup'ta zorunlu kıl:
+  ```python
+  # YAPMA
+  JWT_SECRET: str = "change_me_in_production"
+
+  # YAP
+  JWT_SECRET: str  # .env'de tanımlı olmalı, yoksa startup'ta hata verir
+  ```
+- `.env`, `.env.local`, `HESAPLAR.md` gibi dosyalar `.gitignore`'da olmalı.
+- Yeni env variable eklendiğinde `.env.example`'a placeholder ekle.
+
+### 2. Auth Kontrol Katmanları
+
+| Katman | Nerede | Ne yapar |
+|--------|--------|----------|
+| Gateway rate limit | Nginx | IP bazlı istek limiti |
+| CSRF token | `shared/csrf_protection.py` | Mutating isteklerde token zorunlu |
+| JWT doğrulama | `shared/auth_middleware.py` | İmza + süre + claim kontrolü |
+| Rol kontrolü | `require_role()` | Endpoint bazlı rol filtresi |
+| Sayfa izni | `require_page_permission()` | `allowed_pages` claim kontrolü |
+| RLS context | `set_rls_context()` | PostgreSQL tenant izolasyonu |
+| Frontend guard | `RouteGuard.tsx` | Client-side rota engelleme |
+| (EKLENECEK) middleware.ts | Next.js | Sunucu tarafı rota koruması |
+
+### 3. Auth Endpoint Kuralları
+
+- **Her yeni endpoint auth gerektirir** — istisnalar açıkça belgelenmeli.
+- Auth gerektirmeyen endpoint'ler (health, webhook verify): rotaya yorum ekle.
+- `super_admin` her zaman bypass eder — bunu kontrol etme, `require_role()` bunu otomatik yapar.
+
+### 4. RBAC Kuralları
+
+| Rol | Erişim |
+|-----|--------|
+| `super_admin` | Tüm klinikler, admin paneli, impersonation |
+| `owner` | Kendi kliniği, tüm modüller (admin hariç) |
+| `doctor` | `allowed_pages` ile tanımlı sayfalar |
+| `assistant` | `allowed_pages` ile tanımlı sayfalar |
+
+- Yeni modül/sayfa eklendiğinde `PermissionContext`'e mapping ekle.
+- **Bilinmeyen rota = erişim YOK** (default deny).
+- `allowed_pages` JWT claim'inde taşınır — izin değişikliği yeni login gerektirir.
+
+### 5. Frontend Güvenlik Kuralları
+
+- **`sessionStorage`'da sadece access token** — refresh token ASLA client'ta tutulmaz (httpOnly cookie).
+- **API client interceptor** — 401'de otomatik refresh, başarısızsa logout.
+- **XSS koruması** — React otomatik escape yapar; `dangerouslySetInnerHTML` KULLANMA.
+- **Kullanıcı girdisi doğrulama** — form submit'ten önce client-side, asıl doğrulama backend'de.
+
+### 6. Backend Güvenlik Kuralları
+
+- **Parametreli sorgular** — SQL injection'a karşı: `text("... WHERE id = :id"), {"id": value}`.
+- **Input sanitizasyonu** — Pydantic model validation zorunlu, raw request body parse etme.
+- **Rate limiting** — auth endpoint'lerinde decorator ile, diğerlerinde gateway ile.
+- **CORS** — production'da sadece frontend origin'i allow et.
+- **Dosya yükleme** — extension whitelist + boyut limiti (`client_max_body_size`).
+
+### 7. Hassas Veri
+
+| Veri | Saklama | Loglama |
+|------|---------|---------|
+| Şifre | bcrypt hash | ASLA |
+| JWT secret | .env | ASLA |
+| Refresh token | DB'de SHA256 hash | ASLA |
+| Telefon numarası | DB'de düz metin | Maskelenmiş (`+90***1234`) |
+| E-posta | DB'de düz metin | Maskelenmiş (`a***@mail.com`) |
+| API key (WhatsApp, LLM) | .env | ASLA |
+
+### 8. Webhook Güvenliği
+
+- WhatsApp webhook: **HMAC-SHA256 imza doğrulaması** zorunlu.
+- Verify token: `.env`'den okunmalı, hardcode edilmemeli.
+- İdempotency key: Tekrarlayan webhook'ları filtrele (`whatsapp_message_log.idempotency_key`).
+
+## Güvenlik Kontrol Listesi (Yeni Özellik)
+
+Her yeni endpoint/sayfa eklendiğinde bu listeyi kontrol et:
+
+- [ ] Auth middleware ekli mi?
+- [ ] Gerekli rol/izin kontrolü var mı?
+- [ ] RLS context set ediliyor mu?
+- [ ] Input validation (Pydantic) tanımlı mı?
+- [ ] Gateway route'a eklenmiş mi?
+- [ ] Frontend `PermissionContext`'e mapping eklenmiş mi?
+- [ ] Hassas veri loglanmıyor mu?
+- [ ] Rate limit gerekli mi?

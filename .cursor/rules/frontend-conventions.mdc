@@ -1,0 +1,156 @@
+---
+description: Next.js frontend geliştirme kuralları — UI bileşenleri, veri çekme, stil ve erişilebilirlik standartları.
+globs: "ui/src/**/*.{ts,tsx,css}"
+alwaysApply: false
+---
+
+# DentAI Flow — Frontend Kuralları
+
+## Next.js App Router Kuralları
+
+### Dosya Yapısı
+
+```
+ui/src/app/
+├── layout.tsx              → Root layout (AuthProvider, metadata)
+├── page.tsx                → / route (login'e redirect)
+├── globals.css             → Tailwind directives + base styles
+├── login/page.tsx          → Public giriş sayfası
+├── dashboard/
+│   ├── layout.tsx          → Dashboard shell (Sidebar, Topbar, RouteGuard)
+│   ├── page.tsx            → Ana dashboard
+│   ├── appointments/page.tsx
+│   ├── inventory/page.tsx
+│   ├── integrations/page.tsx
+│   ├── permissions/page.tsx
+│   ├── waitlist/page.tsx
+│   └── admin/tenants/page.tsx
+├── error.tsx               → (EKLENECEK) Global error boundary
+└── loading.tsx             → (EKLENECEK) Global loading state
+```
+
+### Sayfa Dosyası Kuralları
+
+1. **Sayfa dosyaları ince olmalı** — sadece layout/composition + veri orchestration.
+2. **İş mantığı hook'lara taşınır**, görsel mantık feature bileşenlerine.
+3. **Her dashboard alt sayfası `error.tsx` ve `loading.tsx` içermeli.**
+4. `"use client"` sadece gerektiğinde — state, effect, event handler OLMAYAN bileşenler Server Component kalabilir.
+
+### Bileşen Hiyerarşisi
+
+```
+components/
+├── ui/                     → Primitifler (tasarım sistemi)
+│   ├── Button.tsx
+│   ├── Input.tsx           → (EKLENECEK)
+│   ├── Select.tsx          → (EKLENECEK)
+│   ├── Modal.tsx           → (EKLENECEK)
+│   ├── Card.tsx            → (EKLENECEK)
+│   ├── Badge.tsx
+│   ├── Skeleton.tsx
+│   ├── DataTable.tsx       → (EKLENECEK)
+│   └── Toast.tsx           → (EKLENECEK — sonner wrapper)
+├── layout/                 → Uygulama iskeleti
+│   ├── Sidebar.tsx
+│   ├── Topbar.tsx
+│   ├── RouteGuard.tsx
+│   └── Forbidden.tsx
+└── [feature]/              → Özellik bazlı gruplar
+    ├── appointments/
+    │   ├── AppointmentForm.tsx
+    │   ├── AppointmentList.tsx
+    │   ├── AppointmentCard.tsx
+    │   └── AppointmentFilters.tsx
+    ├── inventory/
+    ├── dashboard/
+    └── ...
+```
+
+### Bileşen Kuralları
+
+1. **Bir bileşen dosyası tek bir `export default` içerir.**
+2. **Props interface'i bileşen adı + `Props` suffix'i ile tanımlanır:**
+   ```typescript
+   interface AppointmentCardProps {
+     appointment: Appointment;
+     onCancel: (id: string) => void;
+   }
+   ```
+3. **Bileşen 400 satırı aşıyorsa** alt bileşenlere parçala.
+4. **İnline style `style={{}}` yalnızca dinamik değerler için** (progress bar genişliği, grid pozisyonu). Statik stiller Tailwind ile.
+5. **Bileşen içinde doğrudan API çağrısı yapma** — hook veya service katmanından al.
+
+## Veri Çekme Stratejisi
+
+### Mevcut: Custom Hooks + Axios
+
+```
+hooks/
+├── useAuth.ts              → AuthContext wrapper
+├── useAppointments.ts      → Randevu CRUD
+├── useDashboard.ts         → Patron dashboard metrikleri
+├── useDoctorDashboard.ts   → Doktor performansı
+├── useWaitlist.ts          → Yedek liste
+├── useInventory.ts         → Stok + QR + cycle
+├── usePatientNotes.ts      → Hasta notları
+└── useTreatments.ts        → Tedavi sayıları
+```
+
+### Kurallar
+
+1. **Tüm HTTP istekleri `apiClient`** kullanır — ASLA doğrudan `fetch()` veya `axios` import etme.
+2. **Hook'lar loading, error, data state'i döner** — bileşen bunları handle eder.
+3. **Mutation sonrası listeyi yenile** — `useCallback` ile refetch fonksiyonu sun.
+4. **Toast bildirimleri sadece sonner** üzerinden — custom toast UI yazma.
+
+### Gelecek: React Query Geçişi (Planlanıyor)
+
+React Query (TanStack Query) cache, invalidation, optimistic update sağlayacak. Geçiş sırasında hook interface'leri korunacak.
+
+## Stil Sistemi
+
+### Tailwind CSS
+
+- **Marka renkleri:** `brand-50` – `brand-900` (mavi tonları, `tailwind.config.ts`'de tanımlı)
+- **Nötr tonlar:** `slate-*`
+- **`cn()` helper** (`@/lib/utils`) ile koşullu sınıf birleştirme:
+  ```typescript
+  import { cn } from '@/lib/utils';
+  <div className={cn('rounded-xl border', isActive && 'border-brand-500')} />
+  ```
+- **Dark mode class'ları henüz aktif değil** — config'de `darkMode: ['class']` var ama UI'da kullanılmıyor. Yeni bileşenlerde dark mode desteği EKLEME (şimdilik).
+
+### Tasarım Token'ları
+
+| Token | Değer |
+|-------|-------|
+| Kart | `rounded-xl border border-slate-200 bg-white shadow-sm p-6` |
+| Input | `rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20` |
+| Sayfa başlığı | `text-2xl font-bold text-slate-900` |
+| Küçük etiket | `text-xs font-medium text-slate-500 uppercase tracking-wider` |
+
+## Erişilebilirlik (a11y)
+
+1. **Tüm `<input>` ve `<select>` elementlerine `<label>` bağla** — `htmlFor` + `id` eşleşmesi zorunlu.
+2. **İkon butonlarına `aria-label` ekle** — metin olmayan butonlar ekran okuyucu için tanımlanmalı.
+3. **Modal'larda focus trap** — açıldığında focus modal içinde kalmalı.
+4. **Semantik HTML** — `<nav>`, `<main>`, `<aside>`, `<header>`, `<section>` kullan.
+5. **Renk kontrastı** — metin/arka plan kontrastı WCAG AA (4.5:1) standardını karşılamalı.
+
+## Form Yönetimi
+
+### Mevcut: Manuel `useState`
+
+Küçük formlar (2-3 alan) için kabul edilebilir. Büyük formlar için React Hook Form + Zod geçişi planlanıyor.
+
+### Kurallar
+
+1. **Form submit sırasında loading state göster** — butonu disable et.
+2. **Validasyon hataları alan altında gösterilmeli** — sadece toast yeterli değil.
+3. **Başarı/hata bildirimi sonner toast ile.**
+4. **Form reset: başarılı submit sonrası formu sıfırla** (veya redirect).
+
+## İkonlar
+
+- **Birincil:** `lucide-react` — tutarlı çizgi stil
+- **Emoji ikon KULLANMA** (🦷, 🔬 gibi) — profesyonel UI için lucide veya heroicons tercih et.

@@ -6,7 +6,9 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY routes.conf /etc/nginx/routes.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 
-RUN chmod +x /docker-entrypoint.sh \
+# Windows checkout CRLF kırılmasını önle
+RUN sed -i 's/\r$//' /docker-entrypoint.sh \
+	&& chmod +x /docker-entrypoint.sh \
 	&& mkdir -p /etc/nginx/certs
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

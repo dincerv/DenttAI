@@ -1,0 +1,78 @@
+---
+description: DentAI Flow proje bağlamı — her sohbette otomatik yüklenir. Projeyi tanımlar, mimari kararları ve bilinen teknik borçları özetler.
+globs: 
+alwaysApply: true
+---
+
+# DentAI Flow — Proje Bağlamı
+
+## Projenin Amacı
+
+DentAI Flow, diş kliniklerinde randevu kaçaklarını önleyen, malzeme ömrünü takip eden, WhatsApp ile hasta iletişimini otomatikleştiren ve **Kurtarılan Geliri** raporlayan çok kiracılı (multi-tenant) bir Klinik SaaS platformudur.
+
+## Hedef Kullanıcılar ve Roller
+
+| Rol (DB enum) | Açıklama | Erişim Kapsamı |
+|----------------|----------|----------------|
+| `super_admin` | Platform yöneticisi | Tüm klinikler, impersonation |
+| `owner` | Klinik sahibi | Kendi kliniğinin tüm modülleri |
+| `doctor` | Diş hekimi | Randevu, hasta notları, kendi performansı |
+| `assistant` | Resepsiyonist / asistan | `allowed_pages` ile sınırlı |
+
+> **Bu 4 rol dışında yeni rol adı KULLANMA.** Yeni yetki gerekiyorsa `allowed_pages` dizisine sayfa/modül ekle.
+
+## Sistem Mimarisi
+
+```
+Browser → Next.js (ui:3000) → Nginx Gateway (:80) → Python/Node Mikroservisler → PostgreSQL 16 + Redis 7 + RabbitMQ 3.13
+```
+
+| Servis | Dil / Framework | Port | Sorumluluk |
+|--------|----------------|------|------------|
+| auth-service | Python / FastAPI | 8001 | JWT, refresh token, RBAC, RLS context, kullanıcı CRUD |
+| appointment-service | Python / FastAPI | 8002 | Randevu CRUD, WaitlistEngine, RabbitMQ event yayını |
+| inventory-service | Python / FastAPI | 8003 | QR stok takibi, FEFO, batch yönetimi, anomali tespiti |
+| analytics-service | Python / FastAPI | 8004 | Dashboard metrikleri, Recovered Revenue, AI chat |
+| integration-service | Python / FastAPI | 8005 | WhatsApp webhook, PMS sync (DentSoft/Dr.Dentes), LLM/RAG, Celery |
+| notification-service | Node / TypeScript | 3001 | WhatsApp gönderim (Meta Cloud API / mock), BullMQ scheduler |
+| whatsapp-ingestion | Python / FastAPI | 8010 | Webhook ingest + Celery dispatch |
+| gateway | Nginx 1.27 | 80 | Reverse proxy, rate limit, güvenlik header'ları |
+| frontend | Next.js 14 (App Router) | 3000 | Klinik yönetim paneli |
+
+## Kritik Mimari Kurallar
+
+1. **Next.js backend'e doğrudan bağlanmaz** — tüm API çağrıları `apiClient` (`src/lib/api-client.ts`) aracılığıyla `NEXT_PUBLIC_API_URL` üzerinden Nginx gateway'e gider.
+2. **Veritabanına sadece backend servisler erişir** — Next.js'te Prisma, pg, Drizzle veya başka DB client YOKTUR ve OLMAYACAKTIR.
+3. **Multi-tenancy:** PostgreSQL RLS + JWT `clinic_id` claim. Her sorgu `SET LOCAL app.current_clinic_id` ile izole edilir.
+4. **Docker Compose** ile çalıştırılır — `docker compose up --build -d`.
+5. **Gateway route'ları** `gateway/routes.conf` dosyasında tanımlıdır. Yeni backend endpoint eklendiğinde burası da güncellenmelidir.
+
+## Aktif Klasör Haritası
+
+| Klasör | Açıklama | Docker'da Kullanılıyor? |
+|--------|----------|------------------------|
+| `ui/` | Aktif Next.js frontend | EVET — `docker-compose.yml` |
+| `services/` | Backend mikroservisler | EVET — `docker-compose.yml` |
+| `shared/` | Ortak Python modülleri (auth_middleware, csrf, rate_limiter, DB init/migrations) | EVET |
+| `gateway/` | Nginx config | EVET |
+| `monitoring/` | Prometheus + Grafana + Alertmanager | Ayrı compose |
+| `scripts/` | Deploy, backup, restore, seed | Manuel |
+| ~~`frontend/`~~ | `ui/` ile duplicate — **KULLANMA** | HAYIR |
+| ~~`backend/`~~ | `services/` + `shared/` ile duplicate — **KULLANMA** | HAYIR |
+
+## Bilinen Teknik Borçlar
+
+### Faz 1 tamamlandı (2026-08-02)
+- middleware.ts + `dentai_session` cookie guard
+- Secret default'lar kaldırıldı (`services/`)
+- Public register kapalı (`ALLOW_PUBLIC_REGISTER=false`)
+- PermissionContext default deny
+- Migration `016` (şema drift + FK)
+- Hassas dosyalar gitignore'da
+
+### Kalan (Faz 2+)
+1. `frontend/` ve `backend/` klasörleri duplicate — silinecek
+2. Bazı bileşenler (`SettingsPanel`, `WaitlistForm`, `SmartCalendar`, `PatientDetailCard`) `apiClient` yerine `fetch('/api/...')` kullanıyor — kırık çağrılar
+3. UI primitif kütüphanesi eksik — yalnızca Button, Badge, Skeleton var
+4. Monolitik sayfa dosyaları (1000+ satır) parçalanmalı
+5. `backend/apps/` içindeki eski secret default kopyaları — aktif değil ama temizlenmeli

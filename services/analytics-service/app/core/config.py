@@ -6,14 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://dentai:dentai_secret@postgres:5432/dentai_db"
+    # Database — env zorunlu
+    DATABASE_URL: str
 
     # Redis
-    REDIS_URL: str = "redis://:redis_secret@redis:6379/4"  # DB-4, analytics'e özel
+    REDIS_URL: str = "redis://redis:6379/4"
 
-    # JWT (doğrulama için)
-    JWT_SECRET: str = "change_me_in_production_at_least_32_chars"
+    # JWT (doğrulama için) — env zorunlu, min 32 karakter
+    JWT_SECRET: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
 
     # Service

@@ -8,11 +8,23 @@ let accessTokenMemory: string | null = null;
 const ACCESS_TOKEN_SESSION_KEY = 'dentai_access_token_session';
 const IMP_TOKEN_SESSION_KEY = 'dentai_imp_token';
 const IMP_CLINIC_SESSION_KEY = 'dentai_imp_clinic';
+/** Middleware'in görebileceği oturum bayrağı (JWT değil; sadece varlık kontrolü) */
+export const SESSION_COOKIE_NAME = 'dentai_session';
+
+function setSessionCookie(): void {
+  // Path=/; SameSite=Lax — Next.js middleware (localhost:3000) okuyabilir
+  document.cookie = `${SESSION_COOKIE_NAME}=1; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`;
+}
+
+function clearSessionCookie(): void {
+  document.cookie = `${SESSION_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0`;
+}
 
 export function setTokens(accessToken: string, refreshToken: string): void {
   if (typeof window === 'undefined') return;
   void refreshToken; // refresh token is stored in httpOnly cookie by backend
   accessTokenMemory = accessToken;
+  setSessionCookie();
   try {
     sessionStorage.setItem(ACCESS_TOKEN_SESSION_KEY, accessToken);
   } catch {
@@ -26,6 +38,8 @@ export function getAccessToken(): string | null {
   try {
     const token = sessionStorage.getItem(ACCESS_TOKEN_SESSION_KEY);
     accessTokenMemory = token;
+    // Eski oturumlar için middleware cookie'sini yenile
+    if (token) setSessionCookie();
     return token;
   } catch {
     return null;
@@ -40,6 +54,7 @@ export function getRefreshToken(): string | null {
 export function clearTokens(): void {
   if (typeof window === 'undefined') return;
   accessTokenMemory = null;
+  clearSessionCookie();
   try {
     sessionStorage.removeItem(ACCESS_TOKEN_SESSION_KEY);
   } catch {

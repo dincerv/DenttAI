@@ -1,4 +1,4 @@
-﻿"""
+"""
 DentAI Flow - Analytics Service
 Sorumluluk: Patron Dashboard, aylik iptal analizi,
 yedek listeyle doldurulan randevularin finansal karsiligi
@@ -53,7 +53,7 @@ app = FastAPI(
 app.add_middleware(SecurityHeadersMiddleware)
 
 # 2. CSRF protection
-csrf_secret = getattr(settings, "SECRET_KEY", getattr(settings, "JWT_SECRET", "csrf_fallback_secret"))
+csrf_secret = settings.JWT_SECRET
 app.add_middleware(CSRFMiddleware, secret=csrf_secret)
 
 # 3. CORS

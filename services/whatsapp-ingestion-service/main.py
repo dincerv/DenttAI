@@ -21,7 +21,7 @@ app = FastAPI(
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
-csrf_secret = getattr(settings, "JWT_SECRET", "csrf_fallback_secret")
+csrf_secret = settings.JWT_SECRET
 app.add_middleware(CSRFMiddleware, secret=csrf_secret)
 app.add_middleware(
     CORSMiddleware,

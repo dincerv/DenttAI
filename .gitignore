@@ -1,5 +1,15 @@
 # .env içindeki gizli bilgileri kesinlikle commit etme
 .env
+.env.local
+.env.*.local
+.env.monitoring
+
+# Demo hesaplar (şifreli — asla commit etme)
+HESAPLAR.md
+
+# Sertifikalar / anahtarlar
+*.pem
+*.key
 
 # Python cache
 __pycache__/

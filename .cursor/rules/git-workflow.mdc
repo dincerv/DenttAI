@@ -1,0 +1,119 @@
+---
+description: Git iş akışı ve commit kuralları. Git işlemleri yapılırken uygulanır.
+globs: 
+alwaysApply: false
+---
+
+# DentAI Flow — Git İş Akışı
+
+## Branch Stratejisi
+
+```
+main (production)
+  └── develop (geliştirme ana dalı)
+        ├── feature/whatsapp-live-mode
+        ├── feature/calendar-integration
+        ├── fix/appointment-overlap-bug
+        ├── refactor/split-monolithic-pages
+        └── chore/remove-duplicate-folders
+```
+
+### Branch İsimlendirme
+
+| Tip | Format | Örnek |
+|-----|--------|-------|
+| Yeni özellik | `feature/<kısa-açıklama>` | `feature/google-calendar-sync` |
+| Hata düzeltme | `fix/<kısa-açıklama>` | `fix/broken-api-calls` |
+| Refactoring | `refactor/<kısa-açıklama>` | `refactor/split-inventory-page` |
+| Altyapı / config | `chore/<kısa-açıklama>` | `chore/add-middleware` |
+| Dokümantasyon | `docs/<kısa-açıklama>` | `docs/api-endpoints` |
+| Acil düzeltme | `hotfix/<kısa-açıklama>` | `hotfix/security-patch` |
+
+## Commit Mesajları
+
+### Format
+
+```
+<tip>(<kapsam>): <özet>
+
+<gövde - isteğe bağlı>
+```
+
+### Tip'ler
+
+| Tip | Açıklama |
+|-----|----------|
+| `feat` | Yeni özellik |
+| `fix` | Hata düzeltme |
+| `refactor` | Davranış değiştirmeyen kod iyileştirme |
+| `style` | Stil değişikliği (boşluk, format, noktalı virgül) |
+| `docs` | Dokümantasyon |
+| `test` | Test ekleme/düzeltme |
+| `chore` | Build, config, dependency güncelleme |
+| `perf` | Performans iyileştirme |
+| `security` | Güvenlik düzeltmesi |
+
+### Kapsam'lar
+
+| Kapsam | Açıklama |
+|--------|----------|
+| `frontend` | Next.js UI |
+| `auth` | auth-service |
+| `appointment` | appointment-service |
+| `inventory` | inventory-service |
+| `analytics` | analytics-service |
+| `integration` | integration-service |
+| `notification` | notification-service |
+| `gateway` | Nginx config |
+| `db` | Migration, şema |
+| `docker` | Docker Compose, Dockerfile |
+| `shared` | Ortak modüller |
+
+### Örnekler
+
+```
+feat(frontend): randevu formunu ayrı bileşene taşı
+
+fix(auth): register endpoint'ini invite-only yap
+
+refactor(db): patient_notes tablosu için migration ekle
+
+chore(docker): frontend/ duplicate klasörünü kaldır
+
+security(shared): hardcoded JWT secret default'ını kaldır
+```
+
+## Commit Kuralları
+
+1. **Küçük ve odaklı commit'ler** — tek bir mantıksal değişiklik per commit.
+2. **Commit mesajı Türkçe** (tip/kapsam İngilizce kalır).
+3. **WIP (Work In Progress) commit'i push etme** — local'de squash et.
+4. **`.env`, secret içeren dosyaları ASLA commit etme.**
+5. **Merge commit yerine rebase** — `git pull --rebase`.
+
+## PR Kuralları
+
+1. **PR açıklaması Türkçe** — ne yapıldı, neden yapıldı, nasıl test edilir.
+2. **PR başlığı commit formatında** — `feat(frontend): randevu sayfasını parçala`.
+3. **Self-review** — PR açmadan önce kendi diff'ini gözden geçir.
+4. **Ekran görüntüsü** — UI değişikliklerinde öncesi/sonrası screenshot ekle.
+5. **Draft PR** — henüz tamamlanmamış çalışma için draft PR kullan.
+
+## .gitignore Zorunlu Kurallar
+
+Aşağıdaki dosyalar kesinlikle Git'te olmamalı:
+
+```
+.env
+.env.local
+.env.*.local
+HESAPLAR.md
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.db
+*.sqlite
+```
