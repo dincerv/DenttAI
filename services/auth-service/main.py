@@ -64,8 +64,7 @@ app.include_router(admin_router)
 app.include_router(users_router)
 
 
-@app.get("/health", tags=["Health"])
-async def health_check():
+async def _health_payload():
     from fastapi.responses import JSONResponse
     checks: dict = {}
     status = "ok"
@@ -90,3 +89,14 @@ async def health_check():
     if status == "degraded":
         return JSONResponse(status_code=503, content=payload)
     return payload
+
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    return await _health_payload()
+
+
+# UI api-client CSRF: GET {BASE}/auth/health (gateway yokken doğrudan auth)
+@app.get("/auth/health", include_in_schema=False)
+async def auth_health_alias():
+    return await _health_payload()
