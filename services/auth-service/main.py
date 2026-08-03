@@ -44,13 +44,14 @@ app.add_middleware(SecurityHeadersMiddleware)
 csrf_secret = settings.JWT_SECRET
 app.add_middleware(CSRFMiddleware, secret=csrf_secret)
 
-# 3. CORS
+# 3. CORS — Vercel + localhost (CORS_ALLOWED_ORIGINS env)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Yalnızca frontend'e izin ver
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-CSRF-Token", "X-Request-ID"],  # Allow custom CSRF headers
+    allow_headers=["*", "X-CSRF-Token", "X-Request-ID"],
+    expose_headers=["X-CSRF-Token"],
 )
 
 # ── Global Exception Handler ───────────────────────────

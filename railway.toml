@@ -1,0 +1,12 @@
+# Railway referans ayarları — auth-service için kök Dockerfile yolu.
+# Dashboard'da Root Directory = repo kökü, Dockerfile Path = services/auth-service/Dockerfile
+# Gateway için ayrı servis: Dockerfile Path = gateway/Dockerfile.cloud
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/auth-service/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"

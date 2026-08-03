@@ -1,0 +1,64 @@
+# ============================================================
+# DentAI Flow — Cloud login stack (Neon + Upstash + gateway/auth)
+#
+# Yerel test:
+#   docker compose -f docker-compose.cloud.yml up --build -d
+#
+# Railway: bu dosyayı referans alarak auth + gateway deploy et
+#   veya `railway up` / Dockerfile ile servisleri ayrı oluştur.
+# ============================================================
+
+services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: dentai_cloud_auth
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL (Neon asyncpg) zorunlu}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL (Upstash) zorunlu}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET min 32 chars}
+      JWT_ALGORITHM: HS256
+      ALLOW_PUBLIC_REGISTER: ${ALLOW_PUBLIC_REGISTER:-false}
+      SERVICE_PORT: 8001
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,https://dentt-ai.vercel.app}
+    expose:
+      - "8001"
+    networks:
+      - dentai-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.cloud
+    container_name: dentai_cloud_gateway
+    restart: unless-stopped
+    environment:
+      AUTH_SERVICE_HOST: ${AUTH_SERVICE_HOST:-auth-service}
+      AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT:-8001}
+    ports:
+      - "${GATEWAY_PORT:-8081}:80"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    networks:
+      - dentai-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+networks:
+  dentai-cloud:
+    name: dentai_cloud_network
+    driver: bridge

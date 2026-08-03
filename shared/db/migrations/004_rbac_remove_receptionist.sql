@@ -1,12 +1,28 @@
 -- 004_rbac_remove_receptionist.sql
 -- Resepsiyonist rolünü kaldır; mevcut receptionist kullanıcıları assistant'a çevir.
 -- PostgreSQL'de enum değer silme doğrudan desteklenmez; column type text üzerinden geçiş yapılır.
+-- Taze kurulumda (receptionist hiç yoksa) UPDATE atlanır — enum literal parse hatası olmasın.
 
 BEGIN;
 
--- 1. Mevcut receptionist kullanıcılarını assistant'a çevir
-UPDATE users SET role = 'assistant' WHERE role = 'receptionist';
-UPDATE doctors SET role = 'assistant' WHERE role = 'receptionist';
+-- 1. receptionist sadece enum'da varsa çevir (taze Neon/init'te yok)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    WHERE t.typname = 'user_role' AND e.enumlabel = 'receptionist'
+  ) THEN
+    EXECUTE 'UPDATE users SET role = ''assistant'' WHERE role::text = ''receptionist''';
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'doctors' AND column_name = 'role'
+    ) THEN
+      EXECUTE 'UPDATE doctors SET role = ''assistant'' WHERE role::text = ''receptionist''';
+    END IF;
+  END IF;
+END $$;
 
 -- 2. Kolonları text'e çevir (geçici)
 ALTER TABLE users

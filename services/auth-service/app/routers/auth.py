@@ -35,22 +35,38 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 REFRESH_COOKIE_NAME = "dentai_refresh_token"
 
 
+def _cookie_security() -> dict:
+    """
+    Cross-site (Vercel UI → Railway API) için production'da
+    SameSite=None + Secure zorunlu. Localhost'ta Lax yeterli.
+    """
+    if settings.is_production:
+        return {"secure": True, "samesite": "none"}
+    return {"secure": False, "samesite": "lax"}
+
+
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     """Store refresh token in httpOnly cookie (XSS-safe)."""
+    sec = _cookie_security()
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        secure=False,  # Set true behind HTTPS in production
-        samesite="lax",
+        secure=sec["secure"],
+        samesite=sec["samesite"],
         max_age=60 * 60 * 24 * 30,
         path="/",
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/")
-
+    sec = _cookie_security()
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path="/",
+        secure=sec["secure"],
+        samesite=sec["samesite"],
+    )
 
 @router.post(
     "/register",

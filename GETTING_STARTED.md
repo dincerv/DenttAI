@@ -2,7 +2,9 @@
 
 > Bu rehber Windows (PowerShell) içindir.  
 > Faz 1’e başlamadan önce sistemi bir kez ayağa kaldırıp login olduğundan emin ol.  
-> Son güncelleme: 2026-08-02
+> Son güncelleme: 2026-08-03
+
+> **Vercel’de login:** Neon + Upstash + Railway gerekir → [docs/VERCEL_CLOUD_LOGIN.md](docs/VERCEL_CLOUD_LOGIN.md)
 
 ---
 
