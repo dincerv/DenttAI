@@ -2,10 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY gateway/proxy/requirements.txt .
+# Build context = gateway/ (Railway Root Directory)
+COPY proxy/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY gateway/proxy/main.py .
+COPY proxy/main.py .
 
 EXPOSE 8080
 
