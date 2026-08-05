@@ -1,13 +1,14 @@
 FROM nginx:1.27-alpine
 
 COPY nginx.cloud.conf /etc/nginx/nginx.cloud.conf
-COPY routes.cloud.conf /etc/nginx/routes.conf
+COPY routes.cloud.conf /etc/nginx/routes.cloud.conf
 COPY docker-entrypoint.cloud.sh /docker-entrypoint.sh
 
 RUN sed -i 's/\r$//' /docker-entrypoint.sh \
-	&& chmod +x /docker-entrypoint.sh
+	&& chmod +x /docker-entrypoint.sh \
+	&& mkdir -p /tmp
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]
 
-EXPOSE 80
+EXPOSE 8080
