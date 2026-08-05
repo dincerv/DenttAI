@@ -25,19 +25,28 @@ _exchange: aio_pika.abc.AbstractExchange | None = None
 
 
 async def connect_broker() -> None:
-    """Uygulama başlangıcında çağrılır."""
+    """Uygulama başlangıcında çağrılır. Cloud'da RabbitMQ yoksa opsiyonel geçilir."""
     global _connection, _channel, _exchange
 
-    _connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
-    _channel = await _connection.channel()
-    await _channel.set_qos(prefetch_count=10)
+    try:
+        _connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
+        _channel = await _connection.channel()
+        await _channel.set_qos(prefetch_count=10)
 
-    _exchange = await _channel.declare_exchange(
-        settings.RABBITMQ_EXCHANGE,
-        ExchangeType.TOPIC,
-        durable=True,
-    )
-    logger.info("RabbitMQ bağlantısı kuruldu: %s", settings.RABBITMQ_EXCHANGE)
+        _exchange = await _channel.declare_exchange(
+            settings.RABBITMQ_EXCHANGE,
+            ExchangeType.TOPIC,
+            durable=True,
+        )
+        logger.info("RabbitMQ bağlantısı kuruldu: %s", settings.RABBITMQ_EXCHANGE)
+    except Exception as e:
+        _connection = None
+        _channel = None
+        _exchange = None
+        if settings.RABBITMQ_OPTIONAL:
+            logger.warning("RabbitMQ bağlanamadı (opsiyonel): %s", e)
+            return
+        raise
 
 
 async def close_broker() -> None:

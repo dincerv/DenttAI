@@ -55,10 +55,11 @@ app.add_middleware(CSRFMiddleware, secret=csrf_secret)
 # 3. CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-CSRF-Token", "X-Request-ID"],  # Allow custom CSRF headers
+    allow_headers=["*", "X-CSRF-Token", "X-Request-ID"],
+    expose_headers=["X-CSRF-Token"],
 )
 
 # ── Global Exception Handler ───────────────────────────
@@ -85,8 +86,7 @@ async def health_check():
         checks["postgres"] = f"error: {e}"
         status = "degraded"
     checks["rabbitmq"] = "ok" if is_broker_connected() else "disconnected"
-    if checks["rabbitmq"] != "ok":
-        status = "degraded"
+    # RabbitMQ opsiyonel — Railway healthcheck postgres ile geçer
     payload = {"status": status, "service": "appointment-service", "checks": checks}
     if status == "degraded":
         return JSONResponse(status_code=503, content=payload)

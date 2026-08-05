@@ -3,7 +3,7 @@ FROM nginx:1.27-alpine
 RUN apk add --no-cache openssl
 
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY routes.auth-only.conf /etc/nginx/routes.conf
+COPY routes.cloud.conf /etc/nginx/routes.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN sed -i 's/\r$//' /docker-entrypoint.sh \
