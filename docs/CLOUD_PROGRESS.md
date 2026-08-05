@@ -4,88 +4,45 @@
 
 ---
 
-## Şu an neredeyiz? (öğretici özet)
+## Durum: C0 + C1 çalışıyor
 
 ```
-Tarayıcı
-   ↓
-Vercel (Next.js UI)  ←  dentt-ai.vercel.app
-   ↓  NEXT_PUBLIC_API_URL
-API katmanı (Railway)
-   ├── DenttAI (auth)              Online  ← login / JWT
-   ├── meticulous-rejoicing (appt) Online  ← randevu (henüz UI’ya bağlı değil)
-   └── gateway                     SONRA   ← /api/auth + /api/appointments birleştirir
-   ↓
+Vercel UI (dentt-ai.vercel.app)
+    ↓ NEXT_PUBLIC_API_URL=.../api
+Gateway (acceptable-courage-production-1a8d.up.railway.app)
+    ├── /api/auth/*         → DenttAI (auth)
+    └── /api/appointments/* → meticulous-rejoicing (appointment)
+    ↓
 Neon Postgres + Upstash Redis
 ```
 
-### Ne yaptık, neden?
+| Kontrol | Sonuç |
+|---------|--------|
+| Login | OK |
+| Randevular sayfası | OK (UI açılıyor) |
+| Takvim boş / "Doktor seçin" | Normal — DB’de henüz doktor yok |
+| rabbitmq disconnected | Bilinçli (C2’ye kadar) |
 
-| Adım | Ne | Neden |
-|------|----|--------|
-| Neon | Postgres bulutta | Vercel’deki UI DB’ye bağlanamaz; veriler burada |
-| Şema + seed | Tablolar + demo kullanıcı | Login için klinik/kullanıcı şart |
-| Upstash | Redis | Auth rate-limit / oturum yardımcıları |
-| Railway **DenttAI** | auth-service | Login API |
-| Vercel env | `NEXT_PUBLIC_API_URL` → auth | UI login’i buluta yönlendirdi |
-| Railway **meticulous-rejoicing** | appointment-service | Randevu API (hazır, gateway bekliyor) |
-
-**Önemli:** UI şu an sadece **auth**’a bakıyor. Randevu sayfası çalışsın diye araya **gateway** koyacağız; tek URL altında `/api/auth` + `/api/appointments`.
+Demo: klinik `80C791` · `admin@demo.com` · `Admin1234`
 
 ---
 
-## Faz durumu
+## SIRA — Şimdi (C1.5 veri)
 
-| Faz | Durum |
-|-----|--------|
-| C0 Login | TAMAM |
-| C0.5 Hız (Neon Free 5 dk) | Kısmen — keep-alive sonra |
-| **C1 Gateway** | **ŞİMDİ** |
-| C1 UI bağla | Gateway’den sonra |
+- [ ] **D1.** En az 1 doktor ekle (UI veya seed)
+- [ ] **D2.** Manuel randevu oluştur → takvimde görün
+- [ ] **D3.** F5 ile oturum düşüyor mu kontrol et
 
----
+## SIRA — Sonra
 
-## SIRA — C1 Gateway (şimdi)
-
-### G1. Yeni Railway servisi: `gateway`
-
-1. Proje → **+ New** → GitHub `DenttAI` (aynı repo)
-2. Settings → Build:
-   - Dockerfile path: `gateway/Dockerfile.cloud`
-3. Settings → Networking → **Generate Domain** (public — Vercel buraya bağlanacak)
-4. Variables (Python proxy gateway — nginx değil):
-
-```
-AUTH_SERVICE_URL=http://denttai.railway.internal:8080
-APPOINTMENT_SERVICE_URL=http://meticulous-rejoicing.railway.internal:8080
-```
-
-> Private host: her serviste Settings → Networking → Private Networking.  
-> Port: genelde **8080**.
-
-5. Deploy → Online
-6. Test:
-   - `https://<gateway>/health`
-   - `https://<gateway>/api/auth/health`
-   - `https://<gateway>/api/appointments/health`
-
-### G2. Vercel’i gateway’e çevir
-
-```
-NEXT_PUBLIC_API_URL=https://<gateway-domain>/api
-```
-
-Redeploy → login + randevu aynı API kökünden gider.
-
-### G3. Doğrulama
-
-- [ ] Login hâlâ çalışıyor  
-- [ ] `/dashboard/appointments` veri çekiyor (boş liste de OK)  
-- [ ] Network’te istekler `<gateway>/api/...`
+1. **C1.6** Inventory servisini Railway + gateway’e ekle (isteğe bağlı)  
+2. **C2** RabbitMQ (CloudAMQP) — iptal/waitlist event’leri  
+3. **C0.5** UptimeRobot keep-alive (Neon 5 dk sleep)  
+4. **Faz 2** Teknik borç (`_deprecated_frontend`, kırık fetch)
 
 ---
 
 ## Bir sonraki tek adım
 
-> **G1 — Gateway servisini ekle** (`gateway/Dockerfile.cloud` + yukarıdaki 4 env).  
-> Domain hazır olunca URL’yi buraya yaz.
+> **D1 — Doktor ekle.** Randevular → Diş Hekimleri / sistemde doktor oluştur.  
+> Yoksa “doktor ekleyemiyorum” yaz, seed SQL hazırlarız.
