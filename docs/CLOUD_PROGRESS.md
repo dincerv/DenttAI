@@ -6,19 +6,19 @@
 
 ## Tamamlanan
 
-Login · Randevu · Yedek liste · Gateway · Neon/Upstash
+Login · Randevu · Yedek liste · Envanter · Gateway · Neon/Upstash · Demo veri
 
-Keep-alive → **en sona alındı** (senin tercihin).
+Keep-alive → **en son**
 
 ---
 
-## SIRA — Şimdi: Inventory (C1.6)
+## SIRA — Şimdi: Analytics
 
-### I1. Yeni Railway servisi
+### A1. Yeni Railway servisi
 
 1. **+ New** → GitHub `DenttAI`
-2. Config-as-code path: `railway.inventory.toml`
-3. Variables (auth ile aynı):
+2. Config-as-code path: `railway.analytics.toml`
+3. Variables (auth ile aynı / Reference):
 
 ```
 DATABASE_URL=...
@@ -28,33 +28,35 @@ ENVIRONMENT=production
 CORS_ALLOWED_ORIGINS=https://dentt-ai.vercel.app,http://localhost:3000
 ```
 
+AI chat şimdilik opsiyonel (`GEMINI_API_KEY` yoksa dashboard metrikleri yine çalışır).
+
 4. Deploy → Online  
-5. Private DNS not et: `xxxx.railway.internal`
+5. Private DNS: `xxxx.railway.internal`
 
-### I2. Gateway’e bağla
+### A2. Gateway’e bağla
 
-`acceptable-courage` → Variables → ekle:
+`acceptable-courage` → Variables:
 
 ```
-INVENTORY_SERVICE_URL=http://<inventory-private-host>:8080
+ANALYTICS_SERVICE_URL=http://<analytics-private-host>:8080
 ```
 
 Redeploy gateway.
 
-### I3. Test
+### A3. Test
 
-- `https://acceptable-courage-production-1a8d.up.railway.app/api/inventory/health`
-- Vercel → **Envanter** sayfası
+- `…/api/analytics/health`
+- Vercel → **Dashboard** (Recovered Revenue, randevu istatistikleri)
 
 ---
 
 ## Sonra
 
-Analytics → RabbitMQ → Notification → **Keep-alive (en son)** → Faz 2
+RabbitMQ → Notification / WhatsApp (önce mock) → **Keep-alive (en son)** → Faz 2
 
 ---
 
 ## Bir sonraki tek adım
 
-> **I1 — Inventory servisini Railway’e ekle** (`railway.inventory.toml`).  
+> **A1 — Analytics servisini Railway’e ekle** (`railway.analytics.toml`).  
 > Online olunca private host’u yaz.

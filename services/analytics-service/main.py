@@ -5,7 +5,6 @@ yedek listeyle doldurulan randevularin finansal karsiligi
 (Recovered Revenue) hesaplama ve raporlama.
 """
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,25 +20,12 @@ from shared.security_headers import SecurityHeadersMiddleware
 logger = logging.getLogger(__name__)
 
 
-def _get_allowed_origins() -> list[str]:
-    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
-    if raw.strip():
-        origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
-        if origins:
-            return origins
-
-    # Safe local defaults for dev environments.
-    return [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_redis()
     yield
     await close_redis()
+
 
 
 app = FastAPI(
@@ -59,10 +45,11 @@ app.add_middleware(CSRFMiddleware, secret=csrf_secret)
 # 3. CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_get_allowed_origins(),
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*", "X-CSRF-Token", "X-Request-ID"],
+    expose_headers=["X-CSRF-Token"],
 )
 
 # Global exception handler
@@ -99,7 +86,9 @@ async def health_check():
         checks["redis"] = f"error: {e}"
         status = "degraded"
 
+    # Cloud healthcheck: postgres ayaktaysa 200 (redis degraded olsa bile)
     payload = {"status": status, "service": "analytics-service", "checks": checks}
-    if status == "degraded":
+    if checks.get("postgres") != "ok":
         return JSONResponse(status_code=503, content=payload)
     return payload
+

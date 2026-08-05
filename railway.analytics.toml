@@ -1,0 +1,9 @@
+# Analytics Railway servisi → Config-as-code path: railway.analytics.toml
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/analytics-service/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"

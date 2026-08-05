@@ -3,6 +3,7 @@ Minimal cloud API gateway — Railway PORT uyumlu.
 /api/auth/* → auth-service
 /api/appointments|waitlist|patient-notes → appointment-service
 /api/inventory/* → inventory-service
+/api/analytics/* → analytics-service
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ APPT = os.environ.get(
     "http://meticulous-rejoicing.railway.internal:8080",
 ).rstrip("/")
 INV = os.environ.get("INVENTORY_SERVICE_URL", "").rstrip("/")
+ANA = os.environ.get("ANALYTICS_SERVICE_URL", "").rstrip("/")
 
 app = FastAPI(title="DentAI Cloud Gateway", docs_url=None, redoc_url=None)
 client = httpx.AsyncClient(timeout=60.0, follow_redirects=False)
@@ -128,3 +130,20 @@ async def inventory_proxy(request: Request, path: Optional[str] = None):
         return await _proxy(INV, "/health", request)
     suffix = f"/inventory/{path}" if path else "/inventory"
     return await _proxy(INV, suffix, request)
+
+
+@app.api_route(
+    "/api/analytics/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+@app.api_route("/api/analytics", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def analytics_proxy(request: Request, path: Optional[str] = None):
+    if not ANA:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "analytics_not_configured", "detail": "ANALYTICS_SERVICE_URL eksik"},
+        )
+    if path == "health":
+        return await _proxy(ANA, "/health", request)
+    suffix = f"/analytics/{path}" if path else "/analytics"
+    return await _proxy(ANA, suffix, request)
