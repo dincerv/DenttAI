@@ -12,15 +12,31 @@ export function useInventory() {
 
   const fetch = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const [itemsRes, cyclesRes, batchRes] = await Promise.all([
+      // Cycle endpoint ayrı düşebilir; stok listesini bloklamasın
+      const [itemsSettled, cyclesSettled, batchSettled] = await Promise.allSettled([
         inventoryApi.listItems(),
         inventoryApi.listCycles(),
         inventoryApi.batchSummaries(),
       ]);
-      setItems(itemsRes.data);
-      setCycles(cyclesRes.data);
-      setBatches(batchRes.data);
+
+      if (itemsSettled.status === 'fulfilled') {
+        setItems(itemsSettled.value.data);
+      }
+      if (cyclesSettled.status === 'fulfilled') {
+        setCycles(cyclesSettled.value.data);
+      }
+      if (batchSettled.status === 'fulfilled') {
+        setBatches(batchSettled.value.data);
+      }
+
+      if (itemsSettled.status === 'rejected' && batchSettled.status === 'rejected') {
+        const err = itemsSettled.reason as { response?: { data?: { detail?: string } } };
+        setError(err?.response?.data?.detail ?? 'Envanter yüklenemedi');
+      } else if (cyclesSettled.status === 'rejected') {
+        setCycles([]);
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       setError(e?.response?.data?.detail ?? 'Envanter yüklenemedi');

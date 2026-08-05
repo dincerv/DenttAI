@@ -139,10 +139,12 @@ CREATE TABLE IF NOT EXISTS cycle_materials (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     clinic_id         UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
     qr_id             VARCHAR(100) UNIQUE NOT NULL,  -- UUID-tabanlı
+    shelf_code        VARCHAR(20),                -- gözle okunabilir raf kodu
     name              VARCHAR(255) NOT NULL,
     category          VARCHAR(100),               -- anguldurva | tur | file | diger
     start_date        DATE,                       -- QR aktif edildiğinde doldurulur
     end_date          DATE,                       -- imha sırasında doldurulur
+    activated_at      TIMESTAMPTZ,                -- aktivasyon zamanı
     expected_lifespan INT,                        -- Gün cinsinden beklenen ömür
     actual_lifespan   INT GENERATED ALWAYS AS     -- Otomatik hesaplanan gerçek ömür
                          (CASE WHEN end_date IS NOT NULL AND start_date IS NOT NULL

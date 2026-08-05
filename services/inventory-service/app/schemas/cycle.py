@@ -33,7 +33,7 @@ class CycleMaterialResponse(BaseModel):
     id: UUID
     clinic_id: UUID
     qr_id: str
-    shelf_code: str | None
+    shelf_code: str | None = None
     name: str
     category: str | None
     start_date: date | None
