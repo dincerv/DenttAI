@@ -53,17 +53,15 @@ Neon Postgres + Upstash Redis
 2. Settings → Build:
    - Dockerfile path: `gateway/Dockerfile.cloud`
 3. Settings → Networking → **Generate Domain** (public — Vercel buraya bağlanacak)
-4. Variables:
+4. Variables (Python proxy gateway — nginx değil):
 
 ```
-AUTH_SERVICE_HOST=denttai.railway.internal
-AUTH_SERVICE_PORT=8080
-APPOINTMENT_SERVICE_HOST=meticulous-rejoicing.railway.internal
-APPOINTMENT_SERVICE_PORT=8080
+AUTH_SERVICE_URL=http://denttai.railway.internal:8080
+APPOINTMENT_SERVICE_URL=http://meticulous-rejoicing.railway.internal:8080
 ```
 
-> Private hostname Settings → Networking → Private Networking’de yazar.  
-> Port genelde Railway `PORT` = **8080** (auth’ta gördüğün gibi). Farklıysa oradaki portu yaz.
+> Private host: her serviste Settings → Networking → Private Networking.  
+> Port: genelde **8080**.
 
 5. Deploy → Online
 6. Test:
