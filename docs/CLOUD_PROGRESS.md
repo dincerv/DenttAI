@@ -1,48 +1,60 @@
 # DentAI Flow — Bulut İlerleme Sırası
 
-> Tek kaynaklı sıra. Son güncelleme: 2026-08-05
+> Son güncelleme: 2026-08-05
 
 ---
 
-## Durum: C0 + C1 çalışıyor
+## Tamamlanan
 
-```
-Vercel UI (dentt-ai.vercel.app)
-    ↓ NEXT_PUBLIC_API_URL=.../api
-Gateway (acceptable-courage-production-1a8d.up.railway.app)
-    ├── /api/auth/*         → DenttAI (auth)
-    └── /api/appointments/* → meticulous-rejoicing (appointment)
-    ↓
-Neon Postgres + Upstash Redis
-```
+Login · Randevu · Yedek liste · Gateway · Neon/Upstash
 
-| Kontrol | Sonuç |
-|---------|--------|
-| Login | OK |
-| Randevular sayfası | OK (UI açılıyor) |
-| Takvim boş / "Doktor seçin" | Normal — DB’de henüz doktor yok |
-| rabbitmq disconnected | Bilinçli (C2’ye kadar) |
-
-Demo: klinik `80C791` · `admin@demo.com` · `Admin1234`
+Keep-alive → **en sona alındı** (senin tercihin).
 
 ---
 
-## SIRA — Şimdi (C1.5 veri)
+## SIRA — Şimdi: Inventory (C1.6)
 
-- [ ] **D1.** En az 1 doktor ekle (UI veya seed)
-- [ ] **D2.** Manuel randevu oluştur → takvimde görün
-- [ ] **D3.** F5 ile oturum düşüyor mu kontrol et
+### I1. Yeni Railway servisi
 
-## SIRA — Sonra
+1. **+ New** → GitHub `DenttAI`
+2. Config-as-code path: `railway.inventory.toml`
+3. Variables (auth ile aynı):
 
-1. **C1.6** Inventory servisini Railway + gateway’e ekle (isteğe bağlı)  
-2. **C2** RabbitMQ (CloudAMQP) — iptal/waitlist event’leri  
-3. **C0.5** UptimeRobot keep-alive (Neon 5 dk sleep)  
-4. **Faz 2** Teknik borç (`_deprecated_frontend`, kırık fetch)
+```
+DATABASE_URL=...
+REDIS_URL=...
+JWT_SECRET=...
+ENVIRONMENT=production
+CORS_ALLOWED_ORIGINS=https://dentt-ai.vercel.app,http://localhost:3000
+```
+
+4. Deploy → Online  
+5. Private DNS not et: `xxxx.railway.internal`
+
+### I2. Gateway’e bağla
+
+`acceptable-courage` → Variables → ekle:
+
+```
+INVENTORY_SERVICE_URL=http://<inventory-private-host>:8080
+```
+
+Redeploy gateway.
+
+### I3. Test
+
+- `https://acceptable-courage-production-1a8d.up.railway.app/api/inventory/health`
+- Vercel → **Envanter** sayfası
+
+---
+
+## Sonra
+
+Analytics → RabbitMQ → Notification → **Keep-alive (en son)** → Faz 2
 
 ---
 
 ## Bir sonraki tek adım
 
-> **D1 — Doktor ekle.** Randevular → Diş Hekimleri / sistemde doktor oluştur.  
-> Yoksa “doktor ekleyemiyorum” yaz, seed SQL hazırlarız.
+> **I1 — Inventory servisini Railway’e ekle** (`railway.inventory.toml`).  
+> Online olunca private host’u yaz.

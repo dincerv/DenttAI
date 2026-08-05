@@ -2,6 +2,7 @@
 Minimal cloud API gateway — Railway PORT uyumlu.
 /api/auth/* → auth-service
 /api/appointments|waitlist|patient-notes → appointment-service
+/api/inventory/* → inventory-service
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ APPT = os.environ.get(
     "APPOINTMENT_SERVICE_URL",
     "http://meticulous-rejoicing.railway.internal:8080",
 ).rstrip("/")
+INV = os.environ.get("INVENTORY_SERVICE_URL", "").rstrip("/")
 
 app = FastAPI(title="DentAI Cloud Gateway", docs_url=None, redoc_url=None)
 client = httpx.AsyncClient(timeout=60.0, follow_redirects=False)
@@ -109,3 +111,20 @@ async def waitlist_proxy(request: Request, path: Optional[str] = None):
 async def notes_proxy(request: Request, path: Optional[str] = None):
     suffix = f"/patient-notes/{path}" if path else "/patient-notes"
     return await _proxy(APPT, suffix, request)
+
+
+@app.api_route(
+    "/api/inventory/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+@app.api_route("/api/inventory", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def inventory_proxy(request: Request, path: Optional[str] = None):
+    if not INV:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "inventory_not_configured", "detail": "INVENTORY_SERVICE_URL eksik"},
+        )
+    if path == "health":
+        return await _proxy(INV, "/health", request)
+    suffix = f"/inventory/{path}" if path else "/inventory"
+    return await _proxy(INV, suffix, request)
