@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { getAccessToken } from '@/lib/auth';
+import { apiClient } from '@/lib/api-client';
 import { Bell, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface ClinicSettings {
@@ -76,19 +76,14 @@ export default function SettingsPanel() {
   async function fetchSettings() {
     try {
       setLoading(true);
-      const token = getAccessToken();
 
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+      const [clinicRes, doctorRes] = await Promise.allSettled([
+        apiClient.get('/integration/whatsapp/clinic-settings'),
+        apiClient.get('/integration/whatsapp/doctor-settings'),
+      ]);
 
-      // Fetch clinic settings
-      const clinicRes = await fetch('/api/clinic-settings', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (clinicRes.ok) {
-        const clinic = await clinicRes.json();
+      if (clinicRes.status === 'fulfilled') {
+        const clinic = clinicRes.value.data;
         setClinicSettings(clinic);
         setFollowupEnabled(clinic.post_op_followup_intervals?.enabled ?? true);
         setFollowupDays(clinic.post_op_followup_intervals?.interval_days ?? 1);
@@ -96,12 +91,8 @@ export default function SettingsPanel() {
         setWhatsappPhoneNumberId(clinic.whatsapp_phone_number_id ?? '');
       }
 
-      // Fetch doctor settings
-      const doctorRes = await fetch('/api/doctor-settings', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (doctorRes.ok) {
-        const doctor = await doctorRes.json();
+      if (doctorRes.status === 'fulfilled') {
+        const doctor = doctorRes.value.data;
         setDoctorSettings(doctor);
         setEmergencyAlerts(doctor.receive_emergency_alerts ?? false);
         setNotificationChannel(doctor.preferred_notification_channel ?? 'whatsapp');
@@ -117,36 +108,21 @@ export default function SettingsPanel() {
   async function saveClinicSettings() {
     try {
       setSaving(true);
-      const token = getAccessToken();
-      if (!token) return;
-      const response = await fetch('/api/clinic-settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+      const res = await apiClient.put('/integration/whatsapp/clinic-settings', {
+        is_whatsapp_enabled: true,
+        whatsapp_business_account_id: whatsappBusinessAccountId.trim() || null,
+        whatsapp_phone_number_id: whatsappPhoneNumberId.trim() || null,
+        post_op_followup_intervals: {
+          enabled: followupEnabled,
+          interval_days: followupDays,
+          reminder_message_template: 'default',
         },
-        body: JSON.stringify({
-          is_whatsapp_enabled: true,
-          whatsapp_business_account_id: whatsappBusinessAccountId.trim() || null,
-          whatsapp_phone_number_id: whatsappPhoneNumberId.trim() || null,
-          post_op_followup_intervals: {
-            enabled: followupEnabled,
-            interval_days: followupDays,
-            reminder_message_template: 'default',
-          },
-        }),
       });
-
-      if (response.ok) {
-        const updated = await response.json();
-        setClinicSettings(updated);
-        addToast('success', 'Klinik ayarları kaydedildi');
-      } else {
-        addToast('error', 'Klinik ayarları kaydedilemedi');
-      }
+      setClinicSettings(res.data);
+      addToast('success', 'Klinik ayarları kaydedildi');
     } catch (error) {
       console.error('Failed to save clinic settings:', error);
-      addToast('error', 'Bir hata oluştu');
+      addToast('error', 'Klinik ayarları kaydedilemedi');
     } finally {
       setSaving(false);
     }
@@ -155,30 +131,15 @@ export default function SettingsPanel() {
   async function saveDoctorSettings() {
     try {
       setSaving(true);
-      const token = getAccessToken();
-      if (!token) return;
-      const response = await fetch('/api/doctor-settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          receive_emergency_alerts: emergencyAlerts,
-          preferred_notification_channel: notificationChannel,
-        }),
+      const res = await apiClient.put('/integration/whatsapp/doctor-settings', {
+        receive_emergency_alerts: emergencyAlerts,
+        preferred_notification_channel: notificationChannel,
       });
-
-      if (response.ok) {
-        const updated = await response.json();
-        setDoctorSettings(updated);
-        addToast('success', 'Hekim ayarları kaydedildi');
-      } else {
-        addToast('error', 'Hekim ayarları kaydedilemedi');
-      }
+      setDoctorSettings(res.data);
+      addToast('success', 'Hekim ayarları kaydedildi');
     } catch (error) {
       console.error('Failed to save doctor settings:', error);
-      addToast('error', 'Bir hata oluştu');
+      addToast('error', 'Hekim ayarları kaydedilemedi');
     } finally {
       setSaving(false);
     }

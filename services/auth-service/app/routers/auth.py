@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, status, Request, Response, Cookie, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.schemas.auth import (
@@ -34,22 +35,38 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 REFRESH_COOKIE_NAME = "dentai_refresh_token"
 
 
+def _cookie_security() -> dict:
+    """
+    Cross-site (Vercel UI → Railway API) için production'da
+    SameSite=None + Secure zorunlu. Localhost'ta Lax yeterli.
+    """
+    if settings.is_production:
+        return {"secure": True, "samesite": "none"}
+    return {"secure": False, "samesite": "lax"}
+
+
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     """Store refresh token in httpOnly cookie (XSS-safe)."""
+    sec = _cookie_security()
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        secure=False,  # Set true behind HTTPS in production
-        samesite="lax",
+        secure=sec["secure"],
+        samesite=sec["samesite"],
         max_age=60 * 60 * 24 * 30,
         path="/",
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/")
-
+    sec = _cookie_security()
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path="/",
+        secure=sec["secure"],
+        samesite=sec["samesite"],
+    )
 
 @router.post(
     "/register",
@@ -63,6 +80,11 @@ async def register(
     data: ClinicRegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ClinicRegisterResponse:
+    if not settings.ALLOW_PUBLIC_REGISTER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is disabled",
+        )
     return await register_clinic(data, db)
 
 

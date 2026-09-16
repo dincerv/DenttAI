@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Trash2, RefreshCw, Calendar, User, StickyNote } from 'lucide-react';
+import { Trash2, RefreshCw, Calendar, User, StickyNote, Plus } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { useWaitlist } from '@/hooks/useWaitlist';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { TableRowSkeleton } from '@/components/ui/Skeleton';
 import { formatDate } from '@/lib/utils';
 import { PatientNotesPanel } from '@/components/dashboard/PatientNotesPanel';
+import WaitlistForm from '@/components/dashboard/WaitlistForm';
 import type { WaitlistEntry } from '@/types';
 
 function getPriority(p: number) {
@@ -21,6 +22,7 @@ function getPriority(p: number) {
 export default function WaitlistPage() {
   const { entries, loading, error, refresh, remove } = useWaitlist();
   const [notesEntry, setNotesEntry] = useState<WaitlistEntry | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   async function handleRemove(id: string) {
     try {
@@ -31,21 +33,39 @@ export default function WaitlistPage() {
     }
   }
 
-  // Sort by priority asc (lower = higher priority)
   const sorted = [...entries].sort((a, b) => a.priority - b.priority);
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           Bekleyen hasta sayısı:{' '}
           <span className="font-bold text-slate-800">{entries.length}</span>
         </p>
-        <Button variant="secondary" size="sm" onClick={refresh}>
-          <RefreshCw className="h-3.5 w-3.5" />
-          Yenile
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showForm ? 'secondary' : 'primary'}
+            size="sm"
+            onClick={() => setShowForm((v) => !v)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {showForm ? 'Formu kapat' : 'Hasta ekle'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={refresh}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Yenile
+          </Button>
+        </div>
       </div>
+
+      {showForm && (
+        <WaitlistForm
+          onCreated={() => {
+            toast.success('Yedek listeye eklendi');
+            refresh();
+          }}
+        />
+      )}
 
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-600">
@@ -83,9 +103,7 @@ export default function WaitlistPage() {
                   const prio = getPriority(entry.priority);
                   return (
                     <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-bold text-slate-400">
-                        #{idx + 1}
-                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-400">#{idx + 1}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100">
@@ -96,12 +114,8 @@ export default function WaitlistPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {entry.doctor_name ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {entry.specialty ?? '—'}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{entry.doctor_name ?? '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{entry.specialty ?? '—'}</td>
                       <td className="px-4 py-3">
                         <Badge variant={prio.variant}>{prio.label}</Badge>
                       </td>
@@ -115,27 +129,23 @@ export default function WaitlistPage() {
                           <span className="text-xs text-slate-400">Randevu yok</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-500">
-                        {formatDate(entry.created_at)}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-500">{formatDate(entry.created_at)}</td>
                       <td className="px-4 py-3 text-center">
                         <button
+                          type="button"
                           onClick={() => setNotesEntry(entry)}
-                          title={entry.patient_notes ? 'Notları görüntüle' : 'Not ekle'}
-                          className={`rounded p-1.5 transition-colors ${
-                            entry.patient_notes
-                              ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-                              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-                          }`}
+                          className="inline-flex rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                          aria-label="Notlar"
                         >
                           <StickyNote className="h-4 w-4" />
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
+                          type="button"
                           onClick={() => handleRemove(entry.id)}
-                          title="Listeden Çıkar"
-                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          className="inline-flex rounded-md p-1.5 text-red-500 hover:bg-red-50"
+                          aria-label="Sil"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -149,26 +159,21 @@ export default function WaitlistPage() {
         </div>
       </div>
 
-      {!loading && sorted.length > 0 && (
-        <p className="text-xs text-slate-400">
-          * Yüksek öncelikli hastalar randevu iptallerinde otomatik bildirim alır.
-        </p>
-      )}
-
       {notesEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-lg">
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setNotesEntry(null)}
-                className="absolute -top-3 -right-3 z-10 rounded-full bg-white shadow-lg p-1.5 text-slate-400 hover:text-slate-600"
+                className="absolute -right-3 -top-3 z-10 rounded-full bg-white p-1.5 text-slate-400 shadow-lg hover:text-slate-600"
               >
                 <span className="text-lg leading-none">&times;</span>
               </button>
               <PatientNotesPanel
                 patientId={notesEntry.patient_id}
-                patientName={notesEntry.patient_name}
-                canAdd={true}
+                patientName={notesEntry.patient_name ?? undefined}
+                canAdd
                 defaultNoteType="treatment"
               />
             </div>

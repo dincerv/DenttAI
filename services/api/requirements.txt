@@ -1,0 +1,55 @@
+# ============================================================
+# DentAI Flow — Monolith API Service
+# Tüm mikroservislerden birleştirilmiş bağımlılıklar
+# ============================================================
+
+# ── Web Framework ─────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+
+# ── Validation & Settings ─────────────────────────────────
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# ── Database ──────────────────────────────────────────────
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.30
+alembic==1.13.1
+
+# ── Auth & Security ───────────────────────────────────────
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.9
+
+# ── Redis (cache + APScheduler job store) ─────────────────
+redis[asyncio]==5.0.4
+
+# ── Async Scheduler (RabbitMQ + Celery + BullMQ yerine) ───
+APScheduler==3.10.4
+apscheduler[redis]
+pytz==2024.1
+
+# ── HTTP Client (WhatsApp + PMS çağrıları) ────────────────
+httpx==0.27.0
+
+# ── Email validation ──────────────────────────────────────
+email-validator==2.1.1
+
+# ── QR Code (inventory-service) ───────────────────────────
+qrcode[pil]==7.4.2
+Pillow==10.3.0
+
+# ── Data Processing (analytics + integration) ─────────────
+pandas==2.2.2
+openpyxl==3.1.2
+
+# ── Web Scraping / HTML Parse (PMS adapters) ──────────────
+beautifulsoup4==4.12.3
+
+# ── LLM / AI ──────────────────────────────────────────────
+openai==1.3.9
+# google-generativeai eklemek için: pip install google-generativeai
+
+# ── Monitoring ────────────────────────────────────────────
+prometheus-client==0.20.0

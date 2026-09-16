@@ -5,6 +5,10 @@ CERT_DIR="/etc/nginx/certs"
 CERT_PATH="${GATEWAY_TLS_CERT_PATH:-${CERT_DIR}/fullchain.pem}"
 KEY_PATH="${GATEWAY_TLS_KEY_PATH:-${CERT_DIR}/privkey.pem}"
 TLS_CN="${GATEWAY_TLS_CN:-localhost}"
+AUTH_HOST="${AUTH_SERVICE_HOST:-auth-service}"
+AUTH_PORT="${AUTH_SERVICE_PORT:-8001}"
+APPT_HOST="${APPOINTMENT_SERVICE_HOST:-appointment-service}"
+APPT_PORT="${APPOINTMENT_SERVICE_PORT:-8002}"
 
 mkdir -p "$(dirname "${CERT_PATH}")"
 
@@ -14,6 +18,13 @@ if [ ! -f "${CERT_PATH}" ] || [ ! -f "${KEY_PATH}" ]; then
     -subj "/CN=${TLS_CN}" \
     -keyout "${KEY_PATH}" \
     -out "${CERT_PATH}"
+fi
+
+if [ -f /etc/nginx/routes.conf ]; then
+  sed -i "s|http://auth-service:8001|http://${AUTH_HOST}:${AUTH_PORT}|g" /etc/nginx/routes.conf
+  sed -i "s|http://appointment-service:8002|http://${APPT_HOST}:${APPT_PORT}|g" /etc/nginx/routes.conf
+  echo "[gateway] auth → http://${AUTH_HOST}:${AUTH_PORT}" >&2
+  echo "[gateway] appointment → http://${APPT_HOST}:${APPT_PORT}" >&2
 fi
 
 exec "$@"

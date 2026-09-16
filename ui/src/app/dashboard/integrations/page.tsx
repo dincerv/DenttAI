@@ -84,7 +84,7 @@ export default function IntegrationsPage() {
       setConfigs(data);
 
       setClinicSenderLoading(true);
-      const clinicSettings = (await apiClient.get('/clinic-settings')).data as {
+      const clinicSettings = (await apiClient.get('/integration/whatsapp/clinic-settings')).data as {
         whatsapp_business_account_id?: string | null;
         whatsapp_phone_number_id?: string | null;
       };
@@ -222,7 +222,7 @@ export default function IntegrationsPage() {
   const handleSaveClinicSender = async () => {
     setClinicSenderSaving(true);
     try {
-      await apiClient.put('/clinic-settings', {
+      await apiClient.put('/integration/whatsapp/clinic-settings', {
         whatsapp_business_account_id: whatsappBusinessAccountId.trim() || null,
         whatsapp_phone_number_id: whatsappPhoneNumberId.trim() || null,
       });

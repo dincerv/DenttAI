@@ -1,0 +1,15 @@
+# DentAI UI — Railway (Root Directory = ui)
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "node server.js"
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Variables (ikisi de zorunlu):
+#   NEXT_PUBLIC_API_URL=https://denttai-production.up.railway.app/api
+#   RAILWAY_DANGEROUSLY_SKIP_VULNERABILITY_CHECK=I_ACCEPT_THE_RISKS

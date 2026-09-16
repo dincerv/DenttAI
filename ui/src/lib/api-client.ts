@@ -20,8 +20,15 @@ let csrfToken: string | null = null;
 
 async function ensureCsrfToken(): Promise<void> {
   if (csrfToken) return;
-  const res = await axios.get(`${BASE_URL}/auth/health`, { withCredentials: true });
-  csrfToken = (res.headers['x-csrf-token'] as string | undefined) ?? null;
+  try {
+    const res = await axios.get(`${BASE_URL}/auth/health`, { withCredentials: true });
+    const raw = (res.headers['x-csrf-token'] as string | undefined) ?? null;
+    // Middleware kapalıyken eski "disabled" değeri doğrulamada 403 üretir — yok say.
+    csrfToken = raw && raw !== 'disabled' ? raw : null;
+  } catch {
+    // CSRF bootstrap başarısızsa login'i engelleme (Bearer istekler zaten muaf)
+    csrfToken = null;
+  }
 }
 
 // ── Request interceptor — Bearer token ekleme ─────────────
@@ -259,6 +266,10 @@ export const integrationApi = {
   triggerPostOpReachout: (appointmentId: string) =>
     apiClient.post(`/integration/appointments/${appointmentId}/post-op-reachout`),
   testConnection:  () => apiClient.post('/integration/test-connection'),
+  getClinicWhatsappSettings: () =>
+    apiClient.get('/integration/whatsapp/clinic-settings'),
+  updateClinicWhatsappSettings: (data: Record<string, unknown>) =>
+    apiClient.put('/integration/whatsapp/clinic-settings', data),
 };
 
 

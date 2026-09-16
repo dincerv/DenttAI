@@ -1,0 +1,81 @@
+# Cloud C1: auth + appointment + gateway → Neon + Upstash
+services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: dentai_cloud_auth
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL zorunlu}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL zorunlu}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET zorunlu}
+      ALLOW_PUBLIC_REGISTER: ${ALLOW_PUBLIC_REGISTER:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,https://dentt-ai.vercel.app}
+    expose:
+      - "8001"
+    networks:
+      - dentai-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  appointment-service:
+    build:
+      context: .
+      dockerfile: services/appointment-service/Dockerfile
+    container_name: dentai_cloud_appointment
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL zorunlu}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL zorunlu}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET zorunlu}
+      RABBITMQ_OPTIONAL: "true"
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,https://dentt-ai.vercel.app}
+    expose:
+      - "8002"
+    networks:
+      - dentai-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health')\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.cloud
+    container_name: dentai_cloud_gateway
+    restart: unless-stopped
+    environment:
+      AUTH_SERVICE_HOST: ${AUTH_SERVICE_HOST:-auth-service}
+      AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT:-8001}
+      APPOINTMENT_SERVICE_HOST: ${APPOINTMENT_SERVICE_HOST:-appointment-service}
+      APPOINTMENT_SERVICE_PORT: ${APPOINTMENT_SERVICE_PORT:-8002}
+    ports:
+      - "${GATEWAY_PORT:-8081}:80"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      appointment-service:
+        condition: service_healthy
+    networks:
+      - dentai-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+networks:
+  dentai-cloud:
+    name: dentai_cloud_network
+    driver: bridge

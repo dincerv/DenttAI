@@ -1,0 +1,154 @@
+---
+description: Veritabanı ve migration kuralları — SQL dosyaları ve ORM modelleri düzenlenirken uygulanır.
+globs: "**/*.sql,**/models/**/*.py,**/db/**"
+alwaysApply: false
+---
+
+# DentAI Flow — Veritabanı Kuralları
+
+## Veritabanı Mimarisi
+
+- **DBMS:** PostgreSQL 16
+- **ORM:** SQLAlchemy 2.x async (Python), `pg` Pool (Node)
+- **Şema yönetimi:** Ham SQL migration dosyaları (`shared/db/migrations/`)
+- **Multi-tenancy:** Row Level Security (RLS) + JWT `clinic_id`
+- **Next.js:** Veritabanına DOĞRUDAN ERİŞMEZ
+
+## İsimlendirme Kuralları
+
+| Öğe | Kural | Örnek |
+|-----|-------|-------|
+| Tablo adı | snake_case, çoğul | `appointments`, `inventory_items` |
+| Sütun adı | snake_case | `clinic_id`, `created_at`, `is_active` |
+| Primary key | `id` (UUID) | `id UUID PRIMARY KEY DEFAULT gen_random_uuid()` |
+| Foreign key | `<tablo_tekil>_id` | `patient_id`, `doctor_id`, `clinic_id` |
+| Index adı | `idx_<tablo>_<sütunlar>` | `idx_appointments_clinic_date` |
+| Unique constraint | `uq_<tablo>_<sütunlar>` | `uq_users_email_clinic` |
+| RLS policy | `<tablo>_isolation` | `appointments_isolation` |
+| Enum type | snake_case | `user_role`, `appointment_status` |
+| Boolean sütun | `is_` veya `has_` prefix | `is_active`, `has_insurance` |
+| Timestamp sütun | `_at` suffix | `created_at`, `updated_at`, `deleted_at` |
+
+## Zorunlu Sütunlar
+
+Her tabloda (sistem tabloları hariç) aşağıdaki sütunlar bulunmalıdır:
+
+```sql
+id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+clinic_id   UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+`super_admin` tabloları (ör. `ai_usage_events`) için `clinic_id` nullable olabilir ama RLS politikası yine tanımlanmalıdır.
+
+## Migration Kuralları
+
+### Dosya Yapısı
+
+```
+shared/db/
+├── init/
+│   └── 01_init.sql          → Docker ilk kurulum (tüm tablolar + RLS)
+└── migrations/
+    ├── 002_production_hardening.sql
+    ├── 003_batch_indexes.sql
+    ├── ...
+    └── 016_next_migration.sql
+```
+
+### Migration Yazma Kuralları
+
+1. **Sıralı numaralama** — `NNN_açıklayıcı_isim.sql` formatında.
+2. **Idempotent olmalı** — `IF NOT EXISTS`, `IF EXISTS` kullan.
+3. **Tek sorumluluk** — bir migration tek bir şema değişikliği yapar.
+4. **Geri alma yok** — down migration yazılmıyor; gerekirse yeni migration ile düzelt.
+5. **RLS politikası** — yeni tablo oluşturulduğunda aynı migration'da RLS tanımlanmalı.
+6. **Deploy script** — `scripts/deploy.sh` `schema_migrations` tablosu ile migration'ları uygular.
+
+### Migration Şablonu
+
+```sql
+-- Migration: NNN_açıklama
+-- Tarih: YYYY-MM-DD
+-- Açıklama: Ne değişiyor ve neden
+
+BEGIN;
+
+-- 1. Şema değişiklikleri
+ALTER TABLE appointments
+    ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 30;
+
+-- 2. Index'ler
+CREATE INDEX IF NOT EXISTS idx_appointments_duration
+    ON appointments(clinic_id, duration_minutes);
+
+-- 3. RLS güncellemesi (gerekiyorsa)
+-- ...
+
+COMMIT;
+```
+
+## RLS Politika Şablonu
+
+Her yeni tablo için:
+
+```sql
+ALTER TABLE <tablo> ENABLE ROW LEVEL SECURITY;
+ALTER TABLE <tablo> FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY <tablo>_isolation ON <tablo>
+    USING (clinic_id = current_setting('app.current_clinic_id', true)::UUID);
+```
+
+## Foreign Key Kuralları
+
+| İlişki tipi | ON DELETE | Örnek |
+|-------------|-----------|-------|
+| Tenant kökü (clinics) | `CASCADE` | `clinic_id → clinics(id)` |
+| Zorunlu ilişki (sıkı bağ) | `CASCADE` | `item_id → inventory_items(id)` |
+| Referans ilişki (gevşek bağ) | `SET NULL` | `doctor_id → users(id)` |
+| Audit/log tablosu | `SET NULL` veya FK yok | `sent_messages.patient_id` |
+
+**ASLA `ON DELETE` belirtmeden FK oluşturma** — PostgreSQL default `NO ACTION` insert/update'i bloklar.
+
+## Index Stratejisi
+
+| Durum | Index tipi |
+|-------|-----------|
+| Sık sorgulanan FK | B-tree |
+| Composite filtre (clinic + tarih + durum) | Composite B-tree |
+| JSONB alanı içinde arama | GIN |
+| Array alanı (`UUID[]`) | GIN |
+| Partial filtre (aktif kayıtlar) | Partial index (`WHERE is_active = true`) |
+| Full-text arama | GIN + `tsvector` (gelecek) |
+
+## ORM Model Kuralları (SQLAlchemy)
+
+```python
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    clinic_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clinics.id", ondelete="CASCADE"), nullable=False
+    )
+    # ... diğer alanlar
+
+    clinic: Mapped["Clinic"] = relationship(back_populates="appointments")
+```
+
+1. **Mapped type hint** kullan — eski `Column()` yerine `mapped_column()`.
+2. **FK ondelete** — SQL şeması ile tutarlı olmalı.
+3. **Relationship** — `back_populates` ile iki yönlü ilişki.
+4. **ORM modeli SQL şemasından SONRA güncellenir** — önce migration yaz, sonra ORM'i eşle.
+
+## Anti-Pattern'ler (YAPMA)
+
+- SQL migration'sız ORM model alanı ekleme (şema drift)
+- `SELECT *` kullanma — gerekli sütunları belirt
+- RLS'siz tablo oluşturma (multi-tenant izolasyon kırılır)
+- N+1 sorgu — `joinedload()` veya `selectinload()` ile eager loading
+- Transaction dışında birden fazla write — atomik olmalı

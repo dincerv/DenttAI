@@ -8,9 +8,11 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# NEXT_PUBLIC_* değişkenleri build anında sabitlenir — ARG olarak geçmek gerekir
-ARG NEXT_PUBLIC_API_URL=http://localhost:8081/api
+
+# Railway build-arg olarak service variables geçirir
+ARG NEXT_PUBLIC_API_URL=https://denttai-production.up.railway.app/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV DOCKER_STANDALONE=1
 RUN npm run build
 
 # ── Production image ──────────────────────────────────────
@@ -18,9 +20,11 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
@@ -30,7 +34,5 @@ USER nextjs
 
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-CMD ["node", "server.js"]
+# Railway $PORT inject eder; networking portu ile aynı olmalı
+CMD ["sh", "-c", "node server.js"]

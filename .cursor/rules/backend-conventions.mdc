@@ -1,0 +1,168 @@
+---
+description: Backend mikroservis geliştirme kuralları — Python FastAPI ve Node.js servisler için standartlar.
+globs: "services/**/*.{py,ts}"
+alwaysApply: false
+---
+
+# DentAI Flow — Backend Kuralları
+
+## Servis Sorumluluuk Haritası
+
+Her servisin tek bir domain sorumluluğu vardır. Yeni özellik eklerken doğru servise yerleştir:
+
+| Özellik | Sorumlu Servis |
+|---------|---------------|
+| Kullanıcı kaydı, giriş, JWT, rol | auth-service |
+| Randevu CRUD, iptal, waitlist | appointment-service |
+| Stok takibi, QR, batch, FEFO | inventory-service |
+| Dashboard, metrikler, AI chat | analytics-service |
+| WhatsApp webhook, PMS sync, LLM, RAG, Celery | integration-service |
+| WhatsApp mesaj gönderimi, zamanlanmış bildirimler | notification-service |
+| Webhook ingest | whatsapp-ingestion-service |
+
+## Python FastAPI Standartları
+
+### Proje Yapısı (Her Servis)
+
+```
+services/<servis-adı>/
+├── app/
+│   ├── __init__.py
+│   ├── main.py           → FastAPI app factory, CORS, middleware mount
+│   ├── core/
+│   │   ├── config.py     → Pydantic Settings (env var okuma)
+│   │   └── database.py   → AsyncEngine + sessionmaker
+│   ├── models/           → SQLAlchemy ORM modelleri
+│   ├── routers/          → Endpoint tanımları
+│   │   └── schemas/      → Pydantic request/response
+│   ├── services/         → İş mantığı sınıfları
+│   ├── tasks/            → Celery task'ları (sadece integration-service)
+│   └── providers/        → Dış servis client'ları
+├── requirements.txt
+├── Dockerfile
+└── tests/                → (EKLENECEK)
+```
+
+### Endpoint Tasarım Kuralları
+
+```python
+@router.get("/appointments", response_model=list[AppointmentResponse])
+async def list_appointments(
+    db: AsyncSession = Depends(get_db),
+    claims: dict = Depends(get_verified_claims),
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    service = AppointmentService(db)
+    return await service.list(
+        clinic_id=claims["clinic_id"],
+        status=status,
+        page=page,
+        limit=limit,
+    )
+```
+
+1. **Dependency Injection** — `Depends()` ile DB session, JWT claims, RLS context enjekte et.
+2. **Response model** — endpoint'ten dönen veri Pydantic schema ile tanımlanmalı.
+3. **Query parametreleri** — `Query()` ile default, min/max validation.
+4. **Path parametreleri** — `Path()` ile tip güvenliği.
+5. **Auth her endpoint'te** — `get_verified_claims` veya `require_role()` kullan. Auth gerektirmeyen endpoint'ler açıkça belgelenmeli.
+
+### Pydantic Şema İsimlendirme
+
+| Amaç | Suffix | Örnek |
+|------|--------|-------|
+| Oluşturma isteği | `Create` | `AppointmentCreate` |
+| Güncelleme isteği | `Update` | `AppointmentUpdate` |
+| API yanıtı | `Response` | `AppointmentResponse` |
+| Liste yanıtı | `ListResponse` | `AppointmentListResponse` |
+| Filtre parametreleri | `Filter` | `AppointmentFilter` |
+
+### DB Session Yönetimi
+
+```python
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+```
+
+- Her request tek session — middleware/dependency ile yönetilir.
+- `commit()` başarılıysa otomatik, exception'da `rollback()`.
+- Transaction iç içe gerekiyorsa `session.begin_nested()`.
+
+### RLS Context (Multi-Tenancy)
+
+Her sorgudan önce RLS context set edilmelidir:
+
+```python
+await session.execute(
+    text("SET LOCAL app.current_clinic_id = :cid"),
+    {"cid": str(clinic_id)},
+)
+```
+
+Bu `shared/auth_middleware.py`'deki `set_rls_context` dependency'si ile otomatik yapılır. Manuel set etme.
+
+### Loglama
+
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+logger.info("Randevu oluşturuldu: %s", appointment_id)
+logger.warning("Waitlist eşleşmesi bulunamadı: clinic=%s", clinic_id)
+logger.error("WhatsApp gönderim hatası: %s", str(e), exc_info=True)
+```
+
+- `print()` YASAK — `logging` modülü kullan.
+- Log seviyesi: DEBUG (geliştirme), INFO (genel akış), WARNING (beklenmeyen ama işlenebilir), ERROR (hata).
+- Hassas veri loglama — şifre, token, tam telefon numarası ASLA loglanmaz.
+
+## Node.js (notification-service) Standartları
+
+### Yapı
+
+```
+services/notification-service/
+├── src/
+│   ├── index.ts          → Express app, health endpoint
+│   ├── config/config.ts  → Environment variables
+│   ├── db/database.ts    → pg Pool + RLS helper
+│   ├── providers/        → WhatsApp provider (Meta / mock)
+│   ├── consumers/        → RabbitMQ event consumer'ları
+│   └── schedulers/       → BullMQ zamanlanmış job'lar
+├── package.json
+├── tsconfig.json
+└── Dockerfile
+```
+
+### Kurallar
+
+1. **pg Pool** ile connection yönetimi — her sorgu `pool.query()` veya `withRls()` transaction.
+2. **RLS** — `withRls(clinicId, callback)` ile her sorgu tenant-izole.
+3. **RabbitMQ consumer'lar** — event type'a göre handler dispatch.
+4. **BullMQ scheduler** — tekrarlanan job'lar (hatırlatıcı, post-op) cron expression ile.
+
+## API Versiyonlama
+
+Şu an versiyonlama yok. İlk breaking change'de `/api/v1/` prefix'i eklenecek. O zamana kadar mevcut path'ler korunur.
+
+## Hata Yanıt Formatı
+
+Tüm servisler tutarlı hata formatı dönmeli:
+
+```json
+{
+  "detail": "Randevu bulunamadı",
+  "code": "APPOINTMENT_NOT_FOUND",
+  "status": 404
+}
+```
+
+Frontend bu formatı parse ederek kullanıcıya anlamlı Türkçe mesaj gösterir.

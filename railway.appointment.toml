@@ -1,0 +1,9 @@
+# meticulous-rejoicing servisi → Config-as-code path: railway.appointment.toml
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/appointment-service/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"

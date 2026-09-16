@@ -5,15 +5,26 @@
  * Yetkisiz erişimlerde <Forbidden /> bileşenini gösterir.
  */
 import { usePathname } from 'next/navigation';
+import { useAuthContext } from '@/context/AuthContext';
 import { usePermissions } from '@/context/PermissionContext';
 import { Forbidden } from '@/components/layout/Forbidden';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { loading } = useAuthContext();
   const { canAccess } = usePermissions();
 
-  // Asistan '/dashboard' → izinsiz → appointments'a redirect etmek yerine
-  // doğrudan Forbidden göster (çünkü sidebar'da link yok, URL ile gelmiş demektir)
+  if (loading) {
+    return (
+      <div className="space-y-4 p-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
   if (!canAccess(pathname)) {
     return <Forbidden />;
   }

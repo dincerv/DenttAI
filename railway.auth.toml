@@ -1,0 +1,9 @@
+# DenttAI (auth) servisi → Config-as-code path: railway.auth.toml
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/auth-service/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"

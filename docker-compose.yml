@@ -1,10 +1,14 @@
 # ============================================================
-# DentAI Flow -- Two-Tier Compose (UI + Backend)
+# DentAI Flow — Monolith Docker Compose (Geliştirme)
 #
-# Hedef:
-# - Calisma ortaminda yalnizca 2 uygulama servisi calistirmak: ui + backend
-# - Mikroservis kodlarini klasor bazinda oldugu gibi korumak
-# - Ileride tekrar ayri mikroservis deployment'ina gecisi kolay tutmak
+# Eski yapı: 7 Python + 1 Node.js mikroservis + Nginx gateway + RabbitMQ
+# Yeni yapı: 1 Python monolith API + Next.js UI
+#
+# Servisler:
+#   - postgres  (DB)
+#   - redis     (cache + APScheduler job store)
+#   - api       (FastAPI monolith — port 8000)
+#   - ui        (Next.js — port 3000)
 # ============================================================
 
 services:
@@ -18,13 +22,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dentai_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/shared/db/init:/docker-entrypoint-initdb.d:ro
+      - ./shared/db/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     networks:
       - dentai-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dentai}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dentai} -d ${POSTGRES_DB:-dentai_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,81 +48,46 @@ services:
       timeout: 5s
       retries: 5
 
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: dentai_rabbitmq
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-dentai}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-rabbitmq_secret}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    networks:
-      - dentai-network
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  backend:
+  api:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
-    container_name: dentai_backend
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: dentai_api
     restart: unless-stopped
     ports:
-      - "8081:80"
+      - "8000:8000"
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      POSTGRES_USER: ${POSTGRES_USER:-dentai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dentai_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-dentai_db}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
-      RABBITMQ_USER: ${RABBITMQ_USER:-dentai}
-      RABBITMQ_PASS: ${RABBITMQ_PASS:-rabbitmq_secret}
-      SERVICE_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dentai}:${POSTGRES_PASSWORD:-dentai_secret}@postgres:5432/${POSTGRES_DB:-dentai_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
-      CELERY_BACKEND_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/5
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-dentai}:${RABBITMQ_PASS:-rabbitmq_secret}@rabbitmq:5672/
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (min 32 chars)}
       JWT_ALGORITHM: HS256
-      JWT_EXPIRE_MINUTES: 60
-      IMPORT_BATCH_SIZE: ${IMPORT_BATCH_SIZE:-200}
-      AI_PROVIDER: ${ANALYTICS_AI_PROVIDER:-gemini}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${WHATSAPP_LLM_MODEL:-gemini-1.5-flash}
-      ANALYTICS_GEMINI_API_KEY: ${ANALYTICS_GEMINI_API_KEY:-${GEMINI_API_KEY:-}}
-      ANALYTICS_GEMINI_MODEL: ${ANALYTICS_GEMINI_MODEL:-gemini-1.5-pro}
-      LLM_PROVIDER: ${WHATSAPP_LLM_PROVIDER:-gemini}
-      LLM_MODEL: ${WHATSAPP_LLM_MODEL:-gemini-1.5-flash}
-      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
-      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
-      WHATSAPP_MOCK: ${WHATSAPP_MOCK:-true}
-      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
-      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
-      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-dentai_webhook_secret_token}
+      JWT_ACCESS_EXPIRE_MINUTES: 60
+      JWT_REFRESH_EXPIRE_DAYS: 30
+      ALLOW_PUBLIC_REGISTER: ${ALLOW_PUBLIC_REGISTER:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # AI / LLM
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # WhatsApp
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      # Import
+      IMPORT_BATCH_SIZE: ${IMPORT_BATCH_SIZE:-200}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     networks:
       - dentai-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost/health || exit 1"]
-      interval: 20s
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
@@ -128,15 +97,17 @@ services:
       context: ./ui
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8081/api
+        # /api prefix apiClient'ın baseURL'sine ekleniyor (api-client.ts: BASE_URL + path)
+        # Örn: http://localhost:8000/api/auth/login
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api
     container_name: dentai_ui
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8081/api
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
     depends_on:
-      backend:
+      api:
         condition: service_healthy
     networks:
       - dentai-network

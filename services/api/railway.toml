@@ -1,0 +1,21 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Railway $PORT env var'ını otomatik inject eder
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Railway ortam değişkenleri:
+# DATABASE_URL    → Railway PostgreSQL add-on URL'si (otomatik set edilir)
+# REDIS_URL       → Railway Redis add-on URL'si (otomatik set edilir)
+# JWT_SECRET      → Dashboard'dan set et (min 32 char)
+# ENVIRONMENT     → production
+# CORS_ALLOWED_ORIGINS → https://ui-url.up.railway.app
+# GEMINI_API_KEY  → Dashboard'dan set et (opsiyonel)
+# OPENAI_API_KEY  → Dashboard'dan set et (opsiyonel)
+# WHATSAPP_*      → Dashboard'dan set et (opsiyonel)

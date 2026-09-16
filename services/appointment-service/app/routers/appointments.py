@@ -148,7 +148,9 @@ async def list_doctors(
             LEFT JOIN users u ON u.id = d.user_id
             WHERE d.clinic_id = :cid
               AND (
-                    (u.is_active = true AND u.role = 'doctor')
+                    -- Hesabı olmayan / demo doktorlar (user_id NULL)
+                    d.user_id IS NULL
+                 OR (u.is_active = true AND u.role = 'doctor')
                  OR EXISTS (
                         SELECT 1 FROM appointments a
                         WHERE a.clinic_id = d.clinic_id

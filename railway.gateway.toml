@@ -1,0 +1,9 @@
+# acceptable-courage servisi → Config-as-code path: railway.gateway.toml
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "gateway/Dockerfile.cloud"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"

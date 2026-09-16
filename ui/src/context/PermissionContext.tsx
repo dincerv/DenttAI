@@ -76,13 +76,13 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
   const allowedPages: string[] = user?.allowed_pages ?? [];
 
   const value = useMemo<PermissionContextValue>(() => {
-    // Kullanıcı verisi henüz yüklenmediyse her şeye izin ver (flash 403'ü engelle)
+    // Yüklenirken erişim verme — RouteGuard loading UI gösterir (403 flash yok)
     if (loading) {
       return {
         role,
-        can: () => true,
-        canAccess: () => true,
-        allowedModules: Object.keys(MODULE_ACTIONS) as Module[],
+        can: () => false,
+        canAccess: () => false,
+        allowedModules: [],
       };
     }
 
@@ -112,8 +112,8 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
         }
       }
 
-      // Unknown routes — allow (no restriction)
-      return true;
+      // Bilinmeyen rota — default deny
+      return false;
     };
 
     const allModules = Object.keys(MODULE_ACTIONS) as Module[];

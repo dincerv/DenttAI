@@ -20,7 +20,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { getAccessToken } from '@/lib/auth';
+import { apiClient } from '@/lib/api-client';
 import {
   Loader2,
   ChevronDown,
@@ -92,30 +92,19 @@ export default function PatientDetailCard({ patientId }: PatientDetailCardProps)
   async function fetchData() {
     try {
       setLoading(true);
-      const token = getAccessToken();
 
-      if (!token) {
-        setLoading(false);
-        return;
+      const [patientRes, feedbackRes] = await Promise.allSettled([
+        apiClient.get(`/appointments/patients/${patientId}`),
+        apiClient.get('/integration/whatsapp/patient-feedback', { params: { patient_id: patientId } }),
+      ]);
+
+      if (patientRes.status === 'fulfilled') {
+        setPatient(patientRes.value.data);
       }
 
-      // Fetch patient details
-      const patientRes = await fetch(`/api/patients/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (patientRes.ok) {
-        const data = await patientRes.json();
-        setPatient(data);
-      }
-
-      // Fetch patient feedbacks
-      const feedbackRes = await fetch(`/api/patient-feedback?patient_id=${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (feedbackRes.ok) {
-        const data = await feedbackRes.json();
+      if (feedbackRes.status === 'fulfilled') {
+        const data = feedbackRes.value.data;
         const feedbackList: PatientFeedback[] = Array.isArray(data) ? data : data.data || [];
-        // Sort by date descending
         setFeedbacks(
           feedbackList.sort(
             (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

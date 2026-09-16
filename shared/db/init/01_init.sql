@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS clinics (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- RLS yardımcı fonksiyonu — policy'lerden ÖNCE tanımlanmalı
+CREATE OR REPLACE FUNCTION current_clinic_id() RETURNS UUID AS $$
+BEGIN
+    RETURN NULLIF(current_setting('app.current_clinic_id', TRUE), '')::UUID;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 -- ── Kullanıcı rolleri ────────────────────────────────────
 CREATE TYPE user_role AS ENUM ('super_admin', 'owner', 'doctor', 'assistant');
 
@@ -132,10 +139,12 @@ CREATE TABLE IF NOT EXISTS cycle_materials (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     clinic_id         UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
     qr_id             VARCHAR(100) UNIQUE NOT NULL,  -- UUID-tabanlı
+    shelf_code        VARCHAR(20),                -- gözle okunabilir raf kodu
     name              VARCHAR(255) NOT NULL,
     category          VARCHAR(100),               -- anguldurva | tur | file | diger
     start_date        DATE,                       -- QR aktif edildiğinde doldurulur
     end_date          DATE,                       -- imha sırasında doldurulur
+    activated_at      TIMESTAMPTZ,                -- aktivasyon zamanı
     expected_lifespan INT,                        -- Gün cinsinden beklenen ömür
     actual_lifespan   INT GENERATED ALWAYS AS     -- Otomatik hesaplanan gerçek ömür
                          (CASE WHEN end_date IS NOT NULL AND start_date IS NOT NULL
@@ -152,13 +161,7 @@ CREATE TABLE IF NOT EXISTS cycle_materials (
 -- Her tablo için RLS aktif edilir.
 -- app.current_clinic_id değeri Auth Middleware tarafından her bağlantıda
 -- SET LOCAL app.current_clinic_id = '<uuid>' şeklinde iletilir.
--- Bu değeri okuyacak yardımcı fonksiyon:
-
-CREATE OR REPLACE FUNCTION current_clinic_id() RETURNS UUID AS $$
-BEGIN
-    RETURN NULLIF(current_setting('app.current_clinic_id', TRUE), '')::UUID;
-END;
-$$ LANGUAGE plpgsql STABLE;
+-- current_clinic_id() fonksiyonu dosyanın başında tanımlanır.
 
 -- ─── Tablolarda RLS aktif ────────────────────────────────
 ALTER TABLE users            ENABLE ROW LEVEL SECURITY;

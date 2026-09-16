@@ -1,0 +1,133 @@
+---
+description: Kodlama standartları — TypeScript ve Python dosyaları düzenlenirken uygulanır.
+globs: "**/*.{ts,tsx,py}"
+alwaysApply: false
+---
+
+# DentAI Flow — Kodlama Standartları
+
+## Genel Prensipler
+
+1. **DRY (Don't Repeat Yourself)** — aynı mantık 2+ yerde varsa abstract et.
+2. **Tek Sorumluluk** — bir fonksiyon/bileşen/modül tek bir iş yapar.
+3. **Erken çık (Early Return)** — iç içe if blokları yerine guard clause kullan.
+4. **Açık isimler** — `data`, `info`, `handler`, `manager` gibi belirsiz isimlerden kaçın.
+5. **Yorum sadece NEDEN için** — NE yaptığını kod kendisi anlatmalı. "Bu fonksiyon X yapar" tarzı yorumlar yazma.
+
+## Dil: Türkçe mi İngilizce mi?
+
+| Alan | Dil |
+|------|-----|
+| Değişken, fonksiyon, sınıf adları | **İngilizce** |
+| Commit mesajları | **Türkçe** |
+| PR açıklamaları | **Türkçe** |
+| Kod içi yorumlar | **İngilizce** |
+| UI metinleri (kullanıcıya görünen) | **Türkçe** |
+| Dokümantasyon (MD dosyaları) | **Türkçe** |
+| Hata mesajları (API response) | **İngilizce** (frontend'de çevrilir) |
+
+## TypeScript Kuralları
+
+### İsimlendirme
+
+| Öğe | Kural | Örnek |
+|-----|-------|-------|
+| Değişken, fonksiyon | camelCase | `getAppointments`, `clinicId` |
+| React bileşeni | PascalCase | `AppointmentCard`, `StatsPanel` |
+| Tip / Interface | PascalCase | `Appointment`, `DashboardMetrics` |
+| Enum değeri | SCREAMING_SNAKE | `APPOINTMENT_STATUS.CONFIRMED` |
+| Dosya: bileşen | PascalCase.tsx | `AppointmentCard.tsx` |
+| Dosya: hook | camelCase (use prefix) | `useAppointments.ts` |
+| Dosya: utility | camelCase | `apiClient.ts`, `dateUtils.ts` |
+| Dosya: tip tanımı | camelCase veya index | `types/index.ts`, `types/appointment.ts` |
+| Klasör | kebab-case | `components/appointment-list/` |
+| Next.js route | kebab-case | `app/dashboard/appointments/page.tsx` |
+
+### Tip Güvenliği
+
+```typescript
+// YAPMA
+const data: any = await response.json();
+catch (err) { console.log(err); }
+
+// YAP
+const data: AppointmentResponse = await response.json();
+catch (err: unknown) {
+  const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
+  toast.error(message);
+}
+```
+
+- `any` tipi YASAK — `unknown` kullan ve type guard ile daralt.
+- API response'ları için tip tanımla — `src/types/` altında.
+- `as` type assertion minimum kullan — gerekiyorsa yanına yorum ekle.
+- Fonksiyon dönüş tiplerini açıkça yaz (public API'ler için).
+- `interface` tercih et (`type` sadece union/intersection/mapped type için).
+
+### Import Sıralaması
+
+```typescript
+// 1. React/Next.js
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+// 2. Üçüncü parti kütüphaneler
+import { toast } from 'sonner';
+import { format } from 'date-fns';
+
+// 3. Proje alias'ları (@ ile)
+import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/hooks/useAuth';
+
+// 4. Göreceli import'lar
+import { StatsCard } from './StatsCard';
+```
+
+## Python Kuralları
+
+### İsimlendirme
+
+| Öğe | Kural | Örnek |
+|-----|-------|-------|
+| Değişken, fonksiyon | snake_case | `get_appointments`, `clinic_id` |
+| Sınıf | PascalCase | `AppointmentService`, `WaitlistEngine` |
+| Sabit | SCREAMING_SNAKE | `MAX_RETRY_COUNT`, `JWT_ALGORITHM` |
+| Dosya / modül | snake_case | `appointment_service.py`, `auth_middleware.py` |
+| Pydantic şema | PascalCase + Create/Update/Response suffix | `AppointmentCreate`, `UserResponse` |
+| SQLAlchemy model | PascalCase (tekil) | `Appointment`, `Patient` |
+
+### Async / Await
+
+- FastAPI endpoint'leri `async def` olmalı.
+- DB işlemleri `AsyncSession` ile yapılmalı.
+- Senkron (blocking) I/O çağrıları `run_in_executor` ile sarılmalı.
+
+### Hata Yönetimi
+
+```python
+# YAPMA
+except Exception:
+    pass
+
+# YAP
+except ValueError as e:
+    logger.warning("Geçersiz değer: %s", e)
+    raise HTTPException(status_code=400, detail=str(e))
+```
+
+- Geniş `except Exception` YASAK — spesifik exception yakala.
+- HTTP hataları için `HTTPException` kullan, frontend'in anlayacağı `detail` mesajı ver.
+- Tüm servisler `logging` modülü kullanır — `print()` YASAK.
+
+## Dosya Boyutu Limitleri
+
+| Dosya tipi | Maksimum satır |
+|------------|---------------|
+| React sayfa dosyası (`page.tsx`) | 300 |
+| React bileşeni | 400 |
+| Custom hook | 200 |
+| Python router | 300 |
+| Python service | 500 |
+| SQL migration | 200 (büyükse böl) |
+
+Bu limitleri aşan dosyalar refactor edilmelidir.

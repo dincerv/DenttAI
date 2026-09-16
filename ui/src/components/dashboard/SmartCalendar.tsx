@@ -18,7 +18,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { getAccessToken } from '@/lib/auth';
+import { apiClient } from '@/lib/api-client';
 import { ChevronLeft, ChevronRight, Loader2, Sparkles } from 'lucide-react';
 
 interface Appointment {
@@ -75,25 +75,17 @@ export default function SmartCalendar() {
   async function fetchAppointments() {
     try {
       setLoading(true);
-      const token = getAccessToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
       const startDate = new Date(year, month, 1);
       const endDate = new Date(year, month + 1, 0);
 
-      const response = await fetch(
-        `/api/appointments?start_date=${startDate.toISOString()}&end_date=${endDate.toISOString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAppointments(Array.isArray(data) ? data : data.data || []);
-      }
+      const res = await apiClient.get('/appointments', {
+        params: {
+          date_from: startDate.toISOString().split('T')[0],
+          date_to: endDate.toISOString().split('T')[0],
+        },
+      });
+      const data = res.data;
+      setAppointments(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
     } finally {

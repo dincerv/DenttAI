@@ -1,13 +1,21 @@
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required`);
+  }
+  return value;
+}
+
 export const config = {
   rabbitmq: {
-    url: process.env.RABBITMQ_URL ?? 'amqp://dentai:rabbitmq_secret@rabbitmq:5672/',
+    url: requireEnv('RABBITMQ_URL'),
     exchange: process.env.RABBITMQ_EXCHANGE ?? 'dentai.events',
   },
   redis: {
-    url: process.env.REDIS_URL ?? 'redis://:redis_secret@redis:6379/2',
+    url: requireEnv('REDIS_URL'),
   },
   database: {
-    url: process.env.DATABASE_URL ?? 'postgresql://dentai:dentai_secret@postgres:5432/dentai_db',
+    url: requireEnv('DATABASE_URL'),
   },
   whatsapp: {
     // provider: 'meta' = Meta Cloud API; 'mock' = consol+DB (geliştirme)

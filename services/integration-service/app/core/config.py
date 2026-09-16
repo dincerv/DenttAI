@@ -1,15 +1,15 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # ──────────────── DATABASE ────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://dentai:dentai_secret@postgres:5432/dentai_db"
+    DATABASE_URL: str
     
     # ──────────────── JWT/SECURITY ────────────────
-    JWT_SECRET: str = "change_me_in_production_at_least_32_chars"
+    JWT_SECRET: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
     
     # ──────────────── SERVICE CONFIG ────────────────
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     WHATSAPP_BUSINESS_ACCOUNT_ID: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_ACCESS_TOKEN: str = ""
-    WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = "dentai_webhook_secret_token"
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = ""  # production'da env ile set edilmeli
     WHATSAPP_APP_SECRET: str = ""
     
     # ──────────────── LLM (WhatsApp AI) ────────────────
