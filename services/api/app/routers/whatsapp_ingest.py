@@ -57,9 +57,11 @@ async def handle_webhook(
     body = await request.body()
     x_hub_signature = request.headers.get("X-Hub-Signature-256") or request.headers.get("X-Hub-Signature")
 
-    app_secret = settings.WHATSAPP_APP_SECRET or settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN
-    if not _verify_webhook_signature(body, x_hub_signature, app_secret):
+    app_secret = settings.WHATSAPP_APP_SECRET or ""
+    if app_secret and not _verify_webhook_signature(body, x_hub_signature, app_secret):
         raise HTTPException(status_code=403, detail="Invalid signature")
+    elif not app_secret:
+        logger.warning("WHATSAPP_APP_SECRET ayarlanmamış — imza doğrulaması atlandı")
 
     try:
         data = json.loads(body)
