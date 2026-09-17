@@ -174,4 +174,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         else:
             history.append((now, 1))
         
-        return await self.app(request)
+        return await call_next(request)
