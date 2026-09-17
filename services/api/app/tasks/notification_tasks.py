@@ -107,3 +107,46 @@ async def _send_whatsapp_text(phone: str, message: str) -> dict:
                 response=response,
             )
         return response.json()
+
+
+async def _send_whatsapp_interactive_buttons(
+    phone: str,
+    body_text: str,
+    buttons: list[dict],  # [{"id": "btn_id", "title": "Buton Adı"}, ...]
+) -> dict:
+    """WhatsApp interaktif buton mesajı gönderir (max 3 buton)."""
+    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        logger.info(f"[MOCK WhatsApp Interactive] → {phone}: {body_text[:80]}")
+        return {"status": "mock_sent"}
+
+    url = f"https://graph.facebook.com/v25.0/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone.replace("+", "").replace(" ", ""),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body_text},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}}
+                    for btn in buttons[:3]  # max 3
+                ]
+            },
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        if not response.is_success:
+            error_body = response.text[:500]
+            raise httpx.HTTPStatusError(
+                f"{response.status_code} - {error_body}",
+                request=response.request,
+                response=response,
+            )
+        return response.json()

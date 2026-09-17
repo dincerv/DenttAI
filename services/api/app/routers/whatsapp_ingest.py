@@ -107,14 +107,20 @@ async def _process_incoming_message(
     Gelen WhatsApp mesajını işle ve otomatik yanıt gönder.
     """
     try:
-        # Mesaj içeriğini al
         msg_type = message_data.get("type", "")
         text_body = ""
+        button_id = ""
+
         if msg_type == "text":
             text_body = message_data.get("text", {}).get("body", "").lower().strip()
+        elif msg_type == "interactive":
+            # Buton tıklaması
+            interactive = message_data.get("interactive", {})
+            if interactive.get("type") == "button_reply":
+                button_id = interactive.get("button_reply", {}).get("id", "")
 
         # Otomatik yanıt gönder
-        await _send_auto_reply(phone_number, text_body)
+        await _send_auto_reply(phone_number, text_body, msg_type, button_id)
 
         # İş mantığı (mevcut servis)
         from app.services.whatsapp_service import process_incoming_whatsapp_message  # lazy import
@@ -130,41 +136,69 @@ async def _process_incoming_message(
         logger.error(f"WhatsApp mesaj işleme hatası: {e}")
 
 
-async def _send_auto_reply(phone_number: str, incoming_text: str) -> None:
-    """Gelen mesaja kısa otomatik yanıt gönder."""
+async def _send_auto_reply(phone_number: str, incoming_text: str, msg_type: str = "text", button_id: str = "") -> None:
+    """Gelen mesaja interaktif butonlu otomatik yanıt gönder."""
     try:
-        from app.tasks.notification_tasks import _send_whatsapp_text
+        from app.tasks.notification_tasks import _send_whatsapp_text, _send_whatsapp_interactive_buttons
 
-        # Anahtar kelime bazlı yanıtlar
-        if any(k in incoming_text for k in ("randevu", "appointment", "tarih", "saat")):
-            reply = (
-                "🦷 Randevu talebiniz alındı!\n"
-                "Kliniğimiz sizi en kısa sürede arayacak.\n"
-                "Acil durumlar için: 0850 XXX XX XX"
-            )
-        elif any(k in incoming_text for k in ("iptal", "cancel", "vazgeç")):
-            reply = (
-                "Randevu iptal talebiniz alındı.\n"
-                "Kliniğimiz sizi onay için arayacak. 📅"
-            )
-        elif any(k in incoming_text for k in ("fiyat", "ücret", "maliyet", "kaç para")):
-            reply = (
-                "Fiyat bilgisi için kliniğimizi arayınız.\n"
-                "📞 0850 XXX XX XX\n"
-                "Muayene sonrası net fiyat bilgisi verilmektedir."
-            )
-        elif any(k in incoming_text for k in ("teşekkür", "tamam", "ok", "iyi", "sağol", "merhaba", "selam", "hi", "hello")):
-            reply = "Merhaba! 👋 DentAI Diş Kliniği'ne hoş geldiniz. Size nasıl yardımcı olabiliriz?"
-        else:
-            reply = (
-                "✅ Mesajınız alındı!\n"
-                "Ekibimiz en kısa sürede size dönüş yapacak.\n\n"
-                "⏰ Çalışma saatleri: Pzt-Cmt 09:00-19:00\n"
-                "📞 Acil: 0850 XXX XX XX"
-            )
+        # Buton tıklaması
+        if msg_type == "interactive" and button_id:
+            if button_id == "randevu":
+                reply = (
+                    "📅 *Randevu Talebi*\n\n"
+                    "Kliniğimiz çalışma saatlerinde sizi arayacak.\n"
+                    "⏰ Pzt-Cmt 09:00-19:00\n"
+                    "📞 0850 XXX XX XX"
+                )
+            elif button_id == "iptal":
+                reply = (
+                    "❌ *Randevu İptali*\n\n"
+                    "İptal talebiniz alındı.\n"
+                    "Kliniğimiz onay için sizi arayacak."
+                )
+            elif button_id == "fiyat":
+                reply = (
+                    "💰 *Fiyat Bilgisi*\n\n"
+                    "Muayene: Ücretsiz\n"
+                    "Dolgu: 500₺'den başlayan fiyatlarla\n"
+                    "İmplant: 8.000₺'den başlayan fiyatlarla\n\n"
+                    "Net fiyat için muayene gereklidir."
+                )
+            elif button_id == "iletisim":
+                reply = (
+                    "📞 *İletişim*\n\n"
+                    "Tel: 0850 XXX XX XX\n"
+                    "Adres: ...\n"
+                    "⏰ Pzt-Cmt 09:00-19:00"
+                )
+            else:
+                reply = "Talebiniz alındı. En kısa sürede dönüş yapacağız. 🦷"
+            await _send_whatsapp_text(phone_number, reply)
+            return
 
-        await _send_whatsapp_text(phone_number, reply)
-        logger.info(f"Otomatik yanıt gönderildi: {phone_number}")
+        # İlk mesaj veya metin mesajı → interaktif buton menüsü gönder
+        if any(k in incoming_text for k in ("iptal", "cancel", "vazgeç")):
+            # Direkt iptal isteği
+            await _send_whatsapp_text(phone_number,
+                "❌ İptal talebiniz alındı.\nKliniğimiz onay için sizi arayacak.")
+            return
+
+        if any(k in incoming_text for k in ("fiyat", "ücret", "maliyet", "kaç para")):
+            await _send_whatsapp_text(phone_number,
+                "💰 Muayene: Ücretsiz\nDolgu: 500₺+\nİmplant: 8.000₺+\n\nDetay için arayın: 0850 XXX XX XX")
+            return
+
+        # Genel hoş geldin → butonlu menü
+        await _send_whatsapp_interactive_buttons(
+            phone_number,
+            "Merhaba! 👋 *DentAI Diş Kliniği*'ne hoş geldiniz.\nSize nasıl yardımcı olabiliriz?",
+            [
+                {"id": "randevu", "title": "📅 Randevu Al"},
+                {"id": "iptal",   "title": "❌ Randevu İptal"},
+                {"id": "fiyat",   "title": "💰 Fiyat Bilgisi"},
+            ],
+        )
+        logger.info(f"İnteraktif menü gönderildi: {phone_number}")
     except Exception as e:
         logger.warning(f"Otomatik yanıt gönderilemedi: {e}")
 
