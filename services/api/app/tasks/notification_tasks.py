@@ -99,5 +99,11 @@ async def _send_whatsapp_text(phone: str, message: str) -> dict:
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(url, json=payload, headers=headers)
-        response.raise_for_status()
+        if not response.is_success:
+            error_body = response.text[:500]
+            raise httpx.HTTPStatusError(
+                f"{response.status_code} - {error_body}",
+                request=response.request,
+                response=response,
+            )
         return response.json()
