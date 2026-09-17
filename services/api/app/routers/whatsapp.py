@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_
 
@@ -456,10 +456,11 @@ async def get_overdue_feedback(
 )
 async def send_whatsapp_message(
     data: WhatsappMessageCreate,
+    background_tasks: BackgroundTasks,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """WhatsApp mesajı kuyruğa al."""
+    """WhatsApp mesajı kuyruğa al ve hemen gönder."""
     clinic_id = current_user["clinic_id"]
     service = WhatsappMessageService(db)
     
@@ -471,7 +472,62 @@ async def send_whatsapp_message(
     
     message = await service.queue_message(clinic_id, data, idempotency_key)
     await db.commit()
+
+    # Hemen gönder (background task)
+    background_tasks.add_task(_dispatch_queued_message, str(message.id), data.phone_number, data.template_key, data.template_variables)
+
     return message
+
+
+async def _dispatch_queued_message(
+    message_id: str,
+    phone_number: str,
+    template_key: str,
+    template_variables: dict | None,
+) -> None:
+    """Kuyruğa alınan mesajı Meta API'ye gönderir ve DB'yi günceller."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.whatsapp import WhatsappMessageLog, WhatsappMessageStatus
+    from app.tasks.notification_tasks import _send_whatsapp_text
+    from uuid import UUID
+
+    # Template değişkenlerinden mesaj içeriği oluştur
+    vars_ = template_variables or {}
+    if template_key == "appointment_reminder":
+        message_body = (
+            f"Sayın {vars_.get('name', 'Değerli Hastamız')},\n"
+            f"Randevunuz {vars_.get('date', '')} {vars_.get('time', '')} tarihinde.\n"
+            f"Kliniğimizi bekliyoruz! 🦷"
+        )
+    elif template_key == "post_op_followup":
+        message_body = (
+            f"Sayın {vars_.get('name', 'Değerli Hastamız')},\n"
+            f"Tedavinizin ardından nasılsınız? Herhangi bir şikayetiniz varsa bizi arayın."
+        )
+    else:
+        message_body = vars_.get("message", f"DentAI Flow bildirimi: {template_key}")
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await _send_whatsapp_text(phone_number, message_body)
+            wa_id = (result or {}).get("messages", [{}])[0].get("id") if isinstance(result, dict) else None
+            new_status = WhatsappMessageStatus.SENT
+            error_msg = None
+        except Exception as e:
+            wa_id = None
+            new_status = WhatsappMessageStatus.FAILED
+            error_msg = str(e)[:500]
+
+        from sqlalchemy import select
+        row = await session.execute(select(WhatsappMessageLog).where(WhatsappMessageLog.id == UUID(message_id)))
+        msg = row.scalar_one_or_none()
+        if msg:
+            msg.status = new_status
+            if wa_id:
+                msg.whatsapp_message_id = wa_id
+            if error_msg:
+                msg.error_message = error_msg
+            await session.commit()
 
 
 @router.get(
