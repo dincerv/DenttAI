@@ -63,6 +63,17 @@ def _build_jobstore():
         connect_args["ssl_cert_reqs"] = ssl.CERT_NONE
 
     logger.info("APScheduler Redis job store: %s:%s db=%s ssl=%s", host, port, db, parsed.scheme == "rediss")
+    try:
+        import redis as _redis
+        test_client = _redis.StrictRedis(**{k: v for k, v in connect_args.items()
+                                            if k not in ("socket_connect_timeout", "socket_timeout")},
+                                         socket_connect_timeout=3, socket_timeout=3)
+        test_client.ping()
+        test_client.close()
+    except Exception as e:
+        logger.warning("Redis ping başarısız (%s) — MemoryJobStore kullanılıyor", e)
+        return MemoryJobStore()
+
     return RedisJobStore(
         jobs_key="dentai:apscheduler:jobs",
         run_times_key="dentai:apscheduler:run_times",

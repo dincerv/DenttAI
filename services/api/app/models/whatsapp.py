@@ -496,7 +496,8 @@ class WhatsappMessageLog(Base):
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     # Mesaj durumu
     status: Mapped[WhatsappMessageStatus] = mapped_column(
-        Enum(WhatsappMessageStatus, name="whatsapp_message_status", create_type=False),
+        Enum(WhatsappMessageStatus, name="whatsapp_message_status", create_type=False,
+             values_callable=lambda obj: [e.value for e in obj]),
         default=WhatsappMessageStatus.QUEUED,
         nullable=False,
     )
