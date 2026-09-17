@@ -83,12 +83,12 @@ async def _send_whatsapp_text(phone: str, message: str) -> dict:
         return {"status": "mock_sent"}
 
     url = (
-        f"https://graph.facebook.com/v19.0/"
+        f"https://graph.facebook.com/v25.0/"
         f"{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
     )
     headers = {
         "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
     }
     payload = {
         "messaging_product": "whatsapp",
