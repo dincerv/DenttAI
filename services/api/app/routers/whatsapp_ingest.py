@@ -102,11 +102,19 @@ async def _process_incoming_message(
     message_data: dict[str, Any],
 ) -> None:
     """
-    Gelen WhatsApp mesajını işle.
-    Eski: Celery task 'app.tasks.whatsapp_tasks.process_incoming_message'
-    Yeni: Doğrudan async çağrı
+    Gelen WhatsApp mesajını işle ve otomatik yanıt gönder.
     """
     try:
+        # Mesaj içeriğini al
+        msg_type = message_data.get("type", "")
+        text_body = ""
+        if msg_type == "text":
+            text_body = message_data.get("text", {}).get("body", "").lower().strip()
+
+        # Otomatik yanıt gönder
+        await _send_auto_reply(phone_number, text_body)
+
+        # İş mantığı (mevcut servis)
         from app.services.whatsapp_service import process_incoming_whatsapp_message  # lazy import
         await process_incoming_whatsapp_message(
             phone_number=phone_number,
@@ -115,10 +123,48 @@ async def _process_incoming_message(
             message_data=message_data,
         )
     except ImportError:
-        # WhatsApp service henüz bu fonksiyonu implement etmemiş olabilir
         logger.info(f"WhatsApp mesajı alındı (işlem hazır değil): phone={phone_number}, id={message_id}")
     except Exception as e:
         logger.error(f"WhatsApp mesaj işleme hatası: {e}")
+
+
+async def _send_auto_reply(phone_number: str, incoming_text: str) -> None:
+    """Gelen mesaja kısa otomatik yanıt gönder."""
+    try:
+        from app.tasks.notification_tasks import _send_whatsapp_text
+
+        # Anahtar kelime bazlı yanıtlar
+        if any(k in incoming_text for k in ("randevu", "appointment", "tarih", "saat")):
+            reply = (
+                "🦷 Randevu talebiniz alındı!\n"
+                "Kliniğimiz sizi en kısa sürede arayacak.\n"
+                "Acil durumlar için: 0850 XXX XX XX"
+            )
+        elif any(k in incoming_text for k in ("iptal", "cancel", "vazgeç")):
+            reply = (
+                "Randevu iptal talebiniz alındı.\n"
+                "Kliniğimiz sizi onay için arayacak. 📅"
+            )
+        elif any(k in incoming_text for k in ("fiyat", "ücret", "maliyet", "kaç para")):
+            reply = (
+                "Fiyat bilgisi için kliniğimizi arayınız.\n"
+                "📞 0850 XXX XX XX\n"
+                "Muayene sonrası net fiyat bilgisi verilmektedir."
+            )
+        elif any(k in incoming_text for k in ("teşekkür", "tamam", "ok", "iyi", "sağol", "merhaba", "selam", "hi", "hello")):
+            reply = "Merhaba! 👋 DentAI Diş Kliniği'ne hoş geldiniz. Size nasıl yardımcı olabiliriz?"
+        else:
+            reply = (
+                "✅ Mesajınız alındı!\n"
+                "Ekibimiz en kısa sürede size dönüş yapacak.\n\n"
+                "⏰ Çalışma saatleri: Pzt-Cmt 09:00-19:00\n"
+                "📞 Acil: 0850 XXX XX XX"
+            )
+
+        await _send_whatsapp_text(phone_number, reply)
+        logger.info(f"Otomatik yanıt gönderildi: {phone_number}")
+    except Exception as e:
+        logger.warning(f"Otomatik yanıt gönderilemedi: {e}")
 
 
 async def _update_message_status_bg(message_id: str, status: str) -> None:

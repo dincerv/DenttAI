@@ -121,6 +121,48 @@ async def create_appointment(
     db.add(appointment)
     await db.flush()  # id üretilsin ama commit beklensin
     await db.refresh(appointment)
+
+    # ── WhatsApp hatırlatma zamanla ──────────────────────────────
+    try:
+        from app.core.scheduler import schedule_whatsapp_reminder
+        from sqlalchemy import select as sa_select
+        from app.models.whatsapp import ClinicSettings as WhatsappClinicSettings
+        from app.models.patient import Patient
+
+        # Klinik reminder_intervals ayarını al (varsayılan: 60 dk önce)
+        cfg_result = await db.execute(
+            sa_select(WhatsappClinicSettings).where(
+                WhatsappClinicSettings.clinic_id == clinic_id
+            )
+        )
+        cfg = cfg_result.scalar_one_or_none()
+        reminder_minutes = 60  # varsayılan
+        if cfg and cfg.reminder_intervals:
+            # reminder_intervals: {"minutes": 30} veya {"hours": 2}
+            ri = cfg.reminder_intervals
+            if "minutes" in ri:
+                reminder_minutes = int(ri["minutes"])
+            elif "hours" in ri:
+                reminder_minutes = int(ri["hours"]) * 60
+
+        # Hasta telefon numarasını al
+        if data.patient_id:
+            pt_result = await db.execute(
+                sa_select(Patient).where(Patient.id == data.patient_id)
+            )
+            patient = pt_result.scalar_one_or_none()
+            if patient and patient.phone and cfg and cfg.is_whatsapp_enabled:
+                schedule_whatsapp_reminder(
+                    appointment_id=appointment.id,
+                    clinic_id=clinic_id,
+                    patient_phone=patient.phone,
+                    patient_name=patient.full_name or "Değerli Hastamız",
+                    appointment_time=data.scheduled_at,
+                    reminder_minutes_before=reminder_minutes,
+                )
+    except Exception as _sched_err:
+        logger.warning("WhatsApp hatırlatma zamanlanamadı: %s", _sched_err)
+
     return AppointmentResponse.model_validate(appointment)
 
 
