@@ -4,8 +4,9 @@ Sorumluluk: Randevu CRUD, iptal tespiti, WaitlistEngine tetikleme.
 """
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -409,9 +410,34 @@ async def _handle_cancellation(
     match: Waitlist | None = (await db.execute(match_query)).scalars().first()
 
     if match:
-        # Yedek hastayı pasif yap (slot rezerve edildi)
+        # Yedek hastayı pasif yap (slot rezerve edildi) — WhatsApp olmasa da ciro kaydı oluşur
         match.is_active = False
+        match.matched_at = datetime.now(timezone.utc)
+        match.cancelled_appointment_id = appointment.id
         await db.flush()
+
+        await db.execute(
+            text(
+                """
+                INSERT INTO sent_messages
+                    (clinic_id, patient_id, channel, message_type, content, status, metadata)
+                VALUES
+                    (:clinic_id, :patient_id, 'internal', 'match_found', :content, 'recorded',
+                     CAST(:metadata AS jsonb))
+                """
+            ),
+            {
+                "clinic_id": str(appointment.clinic_id),
+                "patient_id": str(match.patient_id),
+                "content": f"Yedek liste eşleşmesi: {appointment.specialty} slotu dolduruldu",
+                "metadata": json.dumps({
+                    "cancelled_appointment_id": str(appointment.id),
+                    "waitlist_id": str(match.id),
+                    "specialty": appointment.specialty,
+                    "original_slot": appointment.scheduled_at.isoformat(),
+                }),
+            },
+        )
 
         await publish_event(
             routing_key="waitlist.match_found",

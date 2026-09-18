@@ -12,12 +12,16 @@ const IMP_CLINIC_SESSION_KEY = 'dentai_imp_clinic';
 export const SESSION_COOKIE_NAME = 'dentai_session';
 
 function setSessionCookie(): void {
-  // Path=/; SameSite=Lax — Next.js middleware (localhost:3000) okuyabilir
-  document.cookie = `${SESSION_COOKIE_NAME}=1; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`;
+  // SameSite=Strict: cookie yalnızca same-site isteklerinde gönderilir (CSRF koruması)
+  // Max-Age=8 saat: uzun süreli oturum paylaşım riskini azaltır
+  // Secure flag: production'da HTTPS zorunlu (localhost'ta çalışmaz ama ekleyip bırakıyoruz)
+  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${SESSION_COOKIE_NAME}=1; Path=/; SameSite=Strict; Max-Age=${60 * 60 * 8}${secure}`;
 }
 
 function clearSessionCookie(): void {
-  document.cookie = `${SESSION_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0`;
+  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${SESSION_COOKIE_NAME}=; Path=/; SameSite=Strict; Max-Age=0${secure}`;
 }
 
 export function setTokens(accessToken: string, refreshToken: string): void {

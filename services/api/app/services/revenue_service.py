@@ -21,10 +21,36 @@ from app.queries import query_waitlist_fills
 from app.schemas import RecoveredAppointment, RecoveredRevenueResponse
 
 
+_SPECIALTY_ALIASES = {
+    "ortodonti": "Ortodonti",
+    "implant": "İmplant",
+    "implantoloji": "İmplant",
+    "pedodonti": "Çocuk Diş",
+    "çocuk diş": "Çocuk Diş",
+    "cocuk dis": "Çocuk Diş",
+    "periodontoloji": "Periodontoloji",
+    "cerrahi": "Ağız Cerrahisi",
+    "ağız cerrahisi": "Ağız Cerrahisi",
+    "agiz cerrahisi": "Ağız Cerrahisi",
+    "endodonti": "Endodonti",
+    "kanal": "Endodonti",
+    "estetik": "Estetik Diş",
+    "genel diş": "Genel Diş",
+    "genel dis": "Genel Diş",
+    "genel diş hekimliği": "Genel Diş",
+    "genel": "Genel Diş",
+}
+
+
 def _fee(specialty: str | None) -> float:
     if not specialty:
         return settings.SPECIALTY_FEE["default"]
-    return settings.SPECIALTY_FEE.get(specialty, settings.SPECIALTY_FEE["default"])
+    if specialty in settings.SPECIALTY_FEE:
+        return settings.SPECIALTY_FEE[specialty]
+    mapped = _SPECIALTY_ALIASES.get(specialty.strip().lower())
+    if mapped:
+        return settings.SPECIALTY_FEE.get(mapped, settings.SPECIALTY_FEE["default"])
+    return settings.SPECIALTY_FEE["default"]
 
 
 async def get_recovered_revenue(
@@ -33,7 +59,7 @@ async def get_recovered_revenue(
     end_date: date,
     db: AsyncSession,
 ) -> RecoveredRevenueResponse:
-    cache_key = build_key("recovered_revenue", clinic_id, start_date, end_date)
+    cache_key = build_key("recovered_revenue_v2", clinic_id, start_date, end_date)
     cached = await get_cache(cache_key)
     if cached:
         cached.pop("cached", None)
@@ -45,7 +71,8 @@ async def get_recovered_revenue(
     specialty_agg: dict[str, dict] = defaultdict(lambda: {"count": 0, "revenue": 0.0})
 
     for row in rows:
-        fee = _fee(row.get("specialty"))
+        paid = row.get("paid_amount")
+        fee = float(paid) if paid is not None else _fee(row.get("specialty"))
         appt = RecoveredAppointment(
             message_id=row["message_id"],
             sent_at=row["sent_at"],

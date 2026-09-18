@@ -35,23 +35,72 @@ async def query_waitlist_fills(
     """
     sql = text("""
         SELECT
-            sm.id               AS message_id,
-            sm.sent_at,
-            a.id                AS original_appointment_id,
-            d.specialty,
-            p.full_name         AS patient_name
-        FROM sent_messages sm
-        JOIN appointments a
-            ON a.id = (sm.metadata->>'cancelled_appointment_id')::UUID
-        JOIN doctors d
-            ON d.id = a.doctor_id
-        JOIN patients p
-            ON p.id = sm.patient_id
-        WHERE sm.clinic_id    = :clinic_id
-          AND sm.message_type = 'match_found'
-          AND sm.sent_at      >= :start_date
-          AND sm.sent_at      <  :end_date
-        ORDER BY sm.sent_at DESC
+            fills.message_id,
+            fills.sent_at,
+            fills.original_appointment_id,
+            fills.specialty,
+            fills.patient_name,
+            fills.paid_amount
+        FROM (
+            SELECT
+                w.id                         AS message_id,
+                w.matched_at                 AS sent_at,
+                w.cancelled_appointment_id   AS original_appointment_id,
+                COALESCE(d.specialty, w.specialty) AS specialty,
+                p.full_name                  AS patient_name,
+                pay.amount                   AS paid_amount
+            FROM waitlist w
+            JOIN patients p
+                ON p.id = w.patient_id
+            LEFT JOIN appointments a
+                ON a.id = w.cancelled_appointment_id
+            LEFT JOIN doctors d
+                ON d.id = a.doctor_id
+            LEFT JOIN LATERAL (
+                SELECT amount
+                FROM payments
+                WHERE clinic_id = w.clinic_id
+                  AND patient_id = w.patient_id
+                  AND status IN ('paid', 'partial', 'pending')
+                  AND created_at >= w.matched_at
+                ORDER BY created_at
+                LIMIT 1
+            ) pay ON true
+            WHERE w.clinic_id = :clinic_id
+              AND w.matched_at IS NOT NULL
+              AND w.cancelled_appointment_id IS NOT NULL
+              AND w.matched_at >= :start_date
+              AND w.matched_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
+
+            UNION ALL
+
+            SELECT
+                sm.id               AS message_id,
+                sm.sent_at,
+                a.id                AS original_appointment_id,
+                d.specialty,
+                p.full_name         AS patient_name,
+                NULL::numeric       AS paid_amount
+            FROM sent_messages sm
+            JOIN appointments a
+                ON a.id = (sm.metadata->>'cancelled_appointment_id')::UUID
+            JOIN doctors d
+                ON d.id = a.doctor_id
+            JOIN patients p
+                ON p.id = sm.patient_id
+            WHERE sm.clinic_id    = :clinic_id
+              AND sm.message_type = 'match_found'
+              AND sm.sent_at      >= :start_date
+              AND sm.sent_at      <  (CAST(:end_date AS date) + INTERVAL '1 day')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM waitlist w2
+                  WHERE w2.cancelled_appointment_id = a.id
+                    AND w2.patient_id = sm.patient_id
+                    AND w2.matched_at IS NOT NULL
+              )
+        ) fills
+        ORDER BY fills.sent_at DESC
     """)
     result = await db.execute(sql, {
         "clinic_id": str(clinic_id),
@@ -83,7 +132,7 @@ async def query_appointment_stats(
         FROM appointments
         WHERE clinic_id    = :clinic_id
           AND scheduled_at >= :start_date
-          AND scheduled_at <  :end_date
+          AND scheduled_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
           {doctor_filter}
     """)
     params: dict = {
@@ -117,7 +166,7 @@ async def query_appointments_by_specialty(
         JOIN doctors d ON d.id = a.doctor_id
         WHERE a.clinic_id    = :clinic_id
           AND a.scheduled_at >= :start_date
-          AND a.scheduled_at <  :end_date
+          AND a.scheduled_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
           {doctor_filter}
         GROUP BY d.specialty
         ORDER BY total DESC
@@ -218,7 +267,7 @@ async def query_doctor_performance(
             JOIN doctors d ON d.id = a.doctor_id
             WHERE a.clinic_id    = :clinic_id
               AND a.scheduled_at >= :start_date
-              AND a.scheduled_at <  :end_date
+              AND a.scheduled_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
         ),
         loyal AS (
             SELECT doctor_id, COUNT(DISTINCT patient_id) AS loyal_patients
@@ -341,7 +390,7 @@ async def query_treatment_counts(
         FROM appointments
         WHERE clinic_id    = :clinic_id
           AND scheduled_at >= :start_date
-          AND scheduled_at <  :end_date
+          AND scheduled_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
           {doctor_filter}
         GROUP BY DATE_TRUNC('{group_by}', scheduled_at)
         ORDER BY period ASC
@@ -383,7 +432,7 @@ async def query_treatment_totals(
         FROM appointments
         WHERE clinic_id    = :clinic_id
           AND scheduled_at >= :start_date
-          AND scheduled_at <  :end_date
+          AND scheduled_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
           {doctor_filter}
     """)
     row = (await db.execute(sql, params)).fetchone()
@@ -421,7 +470,7 @@ async def query_treatments_by_doctor(
             ON a.doctor_id  = d.id
            AND a.clinic_id  = :clinic_id
            AND a.scheduled_at >= :start_date
-           AND a.scheduled_at <  :end_date
+           AND a.scheduled_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
         WHERE d.clinic_id = :clinic_id
         GROUP BY d.id, d.full_name, d.specialty
         ORDER BY total_completed DESC, d.full_name ASC
@@ -491,7 +540,7 @@ async def query_inventory_consumption(
             ON ii.id = adj.item_id
         WHERE adj.clinic_id   = :clinic_id
           AND adj.created_at >= :start_date
-          AND adj.created_at <  :end_date
+          AND adj.created_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
         GROUP BY
             DATE_TRUNC('{group_by}', adj.created_at),
             ii.name, ii.category, ii.unit
@@ -530,7 +579,7 @@ async def query_inventory_consumption_totals(
             ON ii.id = adj.item_id
         WHERE adj.clinic_id   = :clinic_id
           AND adj.created_at >= :start_date
-          AND adj.created_at <  :end_date
+          AND adj.created_at <  (CAST(:end_date AS date) + INTERVAL '1 day')
         GROUP BY ii.name, ii.category, ii.unit
         ORDER BY total_out DESC NULLS LAST, total_in DESC NULLS LAST
     """)

@@ -663,7 +663,7 @@ function ClinicRow({
 
       {/* Ana satır */}
       <div
-        className="flex cursor-pointer items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors"
+        className="flex flex-wrap cursor-pointer items-center gap-4 px-4 py-4 hover:bg-slate-50 transition-colors sm:px-5"
         onClick={toggle}
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -689,7 +689,7 @@ function ClinicRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <span className="flex items-center gap-1 text-xs text-slate-500">
             <Users className="h-3.5 w-3.5" /> {clinic.user_count}
           </span>
@@ -856,7 +856,7 @@ export default function AdminTenantsPage() {
       )}
 
       {/* Başlık */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-blue-900">Klinik Yönetimi</h2>
           <p className="text-sm text-slate-500 mt-0.5">

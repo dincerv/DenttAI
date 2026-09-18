@@ -29,3 +29,23 @@
     animation: shimmer 1.5s infinite linear;
   }
 }
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Global responsive yardımcılar ─────────────────────────── */
+@layer utilities {
+  /* Tablolar her zaman yatay kaydırılabilir */
+  .table-responsive {
+    @apply w-full overflow-x-auto;
+  }
+  /* Mobilde tam ekran modal padding'i */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-0 sm:px-4;
+  }
+  .modal-panel {
+    @apply w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-white;
+  }
+}

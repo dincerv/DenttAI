@@ -20,7 +20,7 @@ const FILTER_OPTIONS: { label: string; value: GroupBy }[] = [
 
 function periodDates(groupBy: GroupBy): { date_from: string; date_to: string } {
   const today = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
   const date_to = fmt(today);
   let date_from: string;
   if (groupBy === 'day') {

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { analyticsApi } from '@/lib/api-client';
+import { periodDates, type GroupBy } from '@/lib/period';
 import type {
   AppointmentStatsResponse,
   DoctorPerformanceResponse,
@@ -10,7 +11,7 @@ import type {
   WasteReportResponse,
 } from '@/types';
 
-export function useDashboard() {
+export function useDashboard(groupBy: GroupBy = 'month') {
   const [revenue, setRevenue]   = useState<RecoveredRevenueResponse | null>(null);
   const [stats, setStats]       = useState<AppointmentStatsResponse | null>(null);
   const [doctorPerf, setDoctorPerf] = useState<DoctorPerformanceResponse | null>(null);
@@ -20,11 +21,13 @@ export function useDashboard() {
   const [error, setError]       = useState<string | null>(null);
 
   useEffect(() => {
+    const dates = periodDates(groupBy);
     setLoading(true);
+    setError(null);
     Promise.allSettled([
-      analyticsApi.recoveredRevenue(),
-      analyticsApi.appointmentStats(),
-      analyticsApi.doctorPerformance(),
+      analyticsApi.recoveredRevenue(dates),
+      analyticsApi.appointmentStats(dates),
+      analyticsApi.doctorPerformance(dates),
       analyticsApi.expiringCycles(),
       analyticsApi.newPatientsOverview(),
     ])
@@ -34,11 +37,11 @@ export function useDashboard() {
         if (perfRes.status === 'fulfilled')  setDoctorPerf(perfRes.value.data);
         if (expRes.status === 'fulfilled')   setExpiring(expRes.value.data);
         if (newPatientsRes.status === 'fulfilled') setNewPatients(newPatientsRes.value.data);
-        const allFailed = [revRes, statsRes, perfRes, expRes, newPatientsRes].every(r => r.status === 'rejected');
-        if (allFailed) setError('Analitik veriler yüklenemedi');
+        const failed = [revRes, statsRes, perfRes].filter((r) => r.status === 'rejected');
+        if (failed.length === 3) setError('Analitik veriler yüklenemedi');
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [groupBy]);
 
   return { revenue, stats, doctorPerf, expiring, newPatients, loading, error };
 }

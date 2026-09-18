@@ -39,6 +39,12 @@ class Waitlist(Base):
     # İsteğe bağlı: hangi günler/saatler uygun?
     preferred_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_appointment_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("appointments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

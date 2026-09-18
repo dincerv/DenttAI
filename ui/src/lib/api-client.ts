@@ -248,6 +248,78 @@ export const tenantsApi = {
   getMyClinic: () => apiClient.get('/tenants/me'),
 };
 
+export const paymentsApi = {
+  summary:        () => apiClient.get('/payments/summary'),
+  list:           (params?: Record<string, string | boolean | number>) =>
+    apiClient.get('/payments', { params }),
+  get:            (id: string) => apiClient.get(`/payments/${id}`),
+  create:         (data: {
+    patient_id?: string;
+    patient_name?: string;
+    patient_phone?: string;
+    national_id?: string;
+    appointment_id?: string;
+    amount: number;
+    description?: string;
+    treatment_type?: string;
+    payment_method?: string;
+    insurance_type?: string;
+    insurance_amount?: number;
+    installment_count?: number;
+    due_date?: string;
+    notes?: string;
+  }) => apiClient.post('/payments', data),
+  update:         (id: string, data: {
+    description?: string;
+    treatment_type?: string;
+    due_date?: string;
+    notes?: string;
+    status?: string;
+  }) => apiClient.patch(`/payments/${id}`, data),
+  cancel:         (id: string) => apiClient.post(`/payments/${id}/cancel`, {}),
+  addTransaction: (id: string, data: {
+    amount: number;
+    payment_method: string;
+    notes?: string;
+  }) => apiClient.post(`/payments/${id}/transactions`, data),
+};
+
+export const invoicesApi = {
+  summary: () => apiClient.get('/invoices/summary'),
+  list: (params?: Record<string, string | number>) => apiClient.get('/invoices', { params }),
+  eligiblePayments: () => apiClient.get('/invoices/eligible-payments'),
+  get: (id: string) => apiClient.get(`/invoices/${id}`),
+  create: (data: unknown) => apiClient.post('/invoices', data),
+  fromPayment: (paymentId: string, data?: {
+    vat_rate?: number;
+    invoice_type?: string;
+    notes?: string;
+  }) => apiClient.post(`/invoices/from-payment/${paymentId}`, data ?? {}),
+  issue: (id: string) => apiClient.post(`/invoices/${id}/issue`, {}),
+  cancel: (id: string) => apiClient.post(`/invoices/${id}/cancel`, {}),
+};
+
+export const prescriptionsApi = {
+  summary: () => apiClient.get('/prescriptions/summary'),
+  list: (params?: Record<string, string | number>) => apiClient.get('/prescriptions', { params }),
+  get: (id: string) => apiClient.get(`/prescriptions/${id}`),
+  create: (data: {
+    patient_id: string;
+    appointment_id?: string;
+    diagnosis?: string;
+    notes?: string;
+    items: {
+      drug_name: string;
+      barcode?: string;
+      dosage?: string;
+      quantity?: number;
+      instructions?: string;
+    }[];
+  }) => apiClient.post('/prescriptions', data),
+  issue: (id: string) => apiClient.post(`/prescriptions/${id}/issue`, {}),
+  cancel: (id: string) => apiClient.post(`/prescriptions/${id}/cancel`, {}),
+};
+
 export const integrationApi = {
   providers:       () => apiClient.get('/integration/providers'),
   listConfigs:     () => apiClient.get('/integration/config'),

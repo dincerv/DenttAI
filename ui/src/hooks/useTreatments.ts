@@ -1,30 +1,10 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { analyticsApi } from '@/lib/api-client';
+import { periodDates, type GroupBy } from '@/lib/period';
 import type { TreatmentCountsResponse, TreatmentsByDoctorResponse } from '@/types';
 
-export type GroupBy = 'day' | 'week' | 'month' | 'year';
-
-/** groupBy değerine göre start_date / end_date hesapla (YYYY-MM-DD) */
-function periodDates(groupBy: GroupBy): { start_date: string; end_date: string } {
-  const today = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const end = fmt(today);
-
-  let start: string;
-  if (groupBy === 'day') {
-    start = end; // sadece bugün
-  } else if (groupBy === 'week') {
-    const d = new Date(today);
-    d.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1)); // Pazartesi
-    start = fmt(d);
-  } else if (groupBy === 'month') {
-    start = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
-  } else {
-    start = fmt(new Date(today.getFullYear(), 0, 1)); // 1 Ocak
-  }
-  return { start_date: start, end_date: end };
-}
+export type { GroupBy };
 
 export function useTreatments(groupBy: GroupBy = 'month') {
   const [data, setData]       = useState<TreatmentCountsResponse | null>(null);

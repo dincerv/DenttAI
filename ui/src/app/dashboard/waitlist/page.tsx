@@ -37,12 +37,12 @@ export default function WaitlistPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           Bekleyen hasta sayısı:{' '}
           <span className="font-bold text-slate-800">{entries.length}</span>
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant={showForm ? 'secondary' : 'primary'}
             size="sm"
@@ -160,7 +160,7 @@ export default function WaitlistPage() {
       </div>
 
       {notesEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-lg">
             <div className="relative">
               <button

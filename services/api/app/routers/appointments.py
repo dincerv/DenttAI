@@ -94,6 +94,8 @@ class PatientSummary(_BaseModel):
     id: str
     full_name: str
     phone: str | None = None
+    insurance_type: str | None = None
+    national_id: str | None = None
 
 
 class PatientsListResponse(_BaseModel):
@@ -104,11 +106,25 @@ class PatientCreateRequest(_BaseModel):
     full_name: str
     phone: str
     email: str | None = None
+    national_id: str | None = None
+    insurance_type: str | None = None
+    insurance_provider: str | None = None
+    insurance_number: str | None = None
 
 
 class PatientUpdateRequest(_BaseModel):
     full_name: str | None = None
     phone: str | None = None
+
+
+def _patient_summary(row) -> PatientSummary:
+    return PatientSummary(
+        id=str(row["id"]),
+        full_name=row["full_name"],
+        phone=row.get("phone"),
+        insurance_type=row.get("insurance_type"),
+        national_id=row.get("national_id"),
+    )
 
 
 def _normalize_tr_phone_to_e164(phone: str) -> str:
@@ -196,7 +212,7 @@ async def list_patients(
 
     if q_clean:
         query_text = """
-            SELECT p.id, p.full_name, p.phone
+            SELECT p.id, p.full_name, p.phone, p.insurance_type, p.national_id
             FROM patients p
             WHERE p.clinic_id = :cid
               AND (
@@ -215,7 +231,7 @@ async def list_patients(
         }
     else:
         query_text = """
-            SELECT p.id, p.full_name, p.phone
+            SELECT p.id, p.full_name, p.phone, p.insurance_type, p.national_id
             FROM patients p
             WHERE p.clinic_id = :cid
             ORDER BY p.full_name
@@ -228,14 +244,7 @@ async def list_patients(
 
     rows = (await db.execute(text(query_text), params)).mappings().all()
     return PatientsListResponse(
-        patients=[
-            PatientSummary(
-                id=str(r["id"]),
-                full_name=r["full_name"],
-                phone=r.get("phone"),
-            )
-            for r in rows
-        ]
+        patients=[_patient_summary(r) for r in rows]
     )
 
 
@@ -260,15 +269,23 @@ async def create_patient(
     phone = _normalize_tr_phone_to_e164(data.phone)
 
     email = data.email.strip() if data.email else None
+    insurance_type = data.insurance_type if data.insurance_type in ("none", "sgk", "private", "mixed") else "none"
+    national_id = (data.national_id or "").strip() or None
 
     try:
         row = (
             await db.execute(
                 text(
                     """
-                    INSERT INTO patients (clinic_id, full_name, phone, email)
-                    VALUES (:cid, :full_name, :phone, :email)
-                    RETURNING id, full_name, phone
+                    INSERT INTO patients (
+                        clinic_id, full_name, phone, email,
+                        national_id, insurance_type, insurance_provider, insurance_number
+                    )
+                    VALUES (
+                        :cid, :full_name, :phone, :email,
+                        :national_id, :insurance_type, :insurance_provider, :insurance_number
+                    )
+                    RETURNING id, full_name, phone, insurance_type, national_id, insurance_type, national_id
                     """
                 ),
                 {
@@ -276,6 +293,10 @@ async def create_patient(
                     "full_name": full_name,
                     "phone": phone,
                     "email": email,
+                    "national_id": national_id,
+                    "insurance_type": insurance_type,
+                    "insurance_provider": data.insurance_provider,
+                    "insurance_number": data.insurance_number,
                 },
             )
         ).mappings().first()
@@ -286,7 +307,7 @@ async def create_patient(
             await db.execute(
                 text(
                     """
-                    SELECT id, full_name, phone
+                    SELECT id, full_name, phone, insurance_type, national_id
                     FROM patients
                     WHERE clinic_id = :cid
                       AND LOWER(TRIM(full_name)) = LOWER(TRIM(:full_name))
@@ -304,7 +325,7 @@ async def create_patient(
         if row is None:
             raise
 
-    return PatientSummary(id=str(row["id"]), full_name=row["full_name"], phone=row.get("phone"))
+    return _patient_summary(row)
 
 
 @router.patch(
@@ -336,7 +357,7 @@ async def update_patient(
                     full_name = COALESCE(:full_name, full_name),
                     phone = COALESCE(:phone, phone)
                 WHERE id = :pid AND clinic_id = :cid
-                RETURNING id, full_name, phone
+                RETURNING id, full_name, phone, insurance_type, national_id
                 """
             ),
             {
@@ -352,7 +373,7 @@ async def update_patient(
         raise HTTPException(status_code=404, detail="Hasta bulunamadi")
 
     await db.commit()
-    return PatientSummary(id=str(row["id"]), full_name=row["full_name"], phone=row.get("phone"))
+    return _patient_summary(row)
 
 
 @router.get(

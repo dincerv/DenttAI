@@ -23,9 +23,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isLogin && hasSession) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
+  // NOT: Oturum cookie'si varken login sayfasına gitmeye izin veriyoruz.
+  // Böylece URL ile giriş yapılmış izlenimi oluşmuyor; yeniden kimlik
+  // doğrulama AuthContext/client tarafında kontrol edilir.
+  // Bu aynı zamanda URL paylaşımı yoluyla otomatik giriş riskini ortadan kaldırır.
 
   return NextResponse.next();
 }

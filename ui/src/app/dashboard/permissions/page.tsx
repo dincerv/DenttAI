@@ -28,6 +28,9 @@ const ALL_PAGES = [
   { key: 'waitlist',     label: 'Bekleme Listesi', icon: '⏳' },
   { key: 'inventory',    label: 'Depo',         icon: '📦' },
   { key: 'integrations', label: 'Entegrasyonlar', icon: '🔌' },
+  { key: 'payments',     label: 'Ödemeler',     icon: '💳' },
+  { key: 'invoices',     label: 'Faturalar',    icon: '🧾' },
+  { key: 'prescriptions',label: 'e-Reçete',     icon: '💊' },
   { key: 'permissions',  label: 'Yetkiler',     icon: '🔒' },
 ];
 
@@ -76,8 +79,8 @@ function EditPermissionsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Settings2 className="h-5 w-5 text-brand-600" />
@@ -227,7 +230,7 @@ function ChangePasswordModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -383,7 +386,7 @@ function CreateUserModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Yeni Kullanıcı Ekle</h2>
@@ -506,7 +509,7 @@ function EditRoleModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Kullanıcıyı Düzenle</h2>
@@ -632,7 +635,7 @@ export default function PermissionsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100">
             <ShieldCheck className="h-5 w-5 text-purple-600" />
@@ -657,6 +660,7 @@ export default function PermissionsPage() {
 
       {/* Table */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -781,6 +785,7 @@ export default function PermissionsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Summary cards */}

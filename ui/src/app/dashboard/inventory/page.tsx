@@ -803,7 +803,7 @@ export default function InventoryPage() {
             </div>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={refresh}>
             <RefreshCw className="h-3.5 w-3.5" />
             Yenile

@@ -7,9 +7,10 @@ import type { RecoveredRevenueResponse } from '@/types';
 interface Props {
   data: RecoveredRevenueResponse | null;
   loading: boolean;
+  periodLabel?: string;
 }
 
-export function RevenueCard({ data, loading }: Props) {
+export function RevenueCard({ data, loading, periodLabel = 'Bu Ay' }: Props) {
   if (loading) {
     return (
       <div className="rounded-2xl bg-gradient-to-r from-brand-700 via-brand-800 to-brand-900 p-5 text-white shadow-lg">
@@ -25,7 +26,7 @@ export function RevenueCard({ data, loading }: Props) {
       <div className="mb-1 flex items-center gap-2 text-brand-200">
         <TrendingUp className="h-4 w-4" />
         <span className="text-sm font-medium uppercase tracking-wider">
-          Bu Ay Kurtarılan Ciro
+          {periodLabel} Kurtarılan Ciro
         </span>
       </div>
 

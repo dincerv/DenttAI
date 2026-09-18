@@ -27,6 +27,7 @@ interface Props {
   defaultNoteType?: NoteType;
   /** Compact mod — waitlist satırı içi */
   compact?: boolean;
+  appointmentId?: string;
 }
 
 export function PatientNotesPanel({
@@ -36,6 +37,7 @@ export function PatientNotesPanel({
   canAdd = true,
   defaultNoteType = 'treatment',
   compact = false,
+  appointmentId,
 }: Props) {
   const params = useMemo(() => {
     const p: Record<string, string> = { patient_id: patientId };
@@ -57,6 +59,7 @@ export function PatientNotesPanel({
         patient_id: patientId,
         note_type: noteType,
         content: newContent.trim(),
+        appointment_id: appointmentId,
       });
       toast.success('Not kaydedildi');
       setNewContent('');

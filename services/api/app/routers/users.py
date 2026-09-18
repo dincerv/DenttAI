@@ -22,8 +22,8 @@ router = APIRouter(prefix="/auth/users", tags=["Kullanıcı Yönetimi"])
 # Her kullanıcının hangi sayfalara erişebileceği kullanıcının rolüne göre
 # otomatik üretilir; owner tüm sayfalara, assistant daha kısıtlı.
 ROLE_DEFAULT_PAGES: dict[str, list[str]] = {
-    "owner":        ["dashboard", "appointments", "appointments_write", "waitlist", "inventory", "integrations", "permissions"],
-    "doctor":       ["dashboard", "appointments", "appointments_write", "waitlist"],
+    "owner":        ["dashboard", "appointments", "appointments_write", "waitlist", "inventory", "integrations", "permissions", "payments", "invoices", "prescriptions"],
+    "doctor":       ["dashboard", "appointments", "appointments_write", "waitlist", "prescriptions"],
     "assistant":    ["appointments", "waitlist", "inventory"],
 }
 

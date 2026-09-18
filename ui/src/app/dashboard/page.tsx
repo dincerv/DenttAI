@@ -5,6 +5,7 @@ import { isImpersonating } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useDashboard } from '@/hooks/useDashboard';
 import { useTreatments, useTreatmentsByDoctor, type GroupBy } from '@/hooks/useTreatments';
+import { PERIOD_LABELS } from '@/lib/period';
 import { RevenueCard } from '@/components/dashboard/RevenueCard';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { AppointmentChart } from '@/components/dashboard/AppointmentChart';
@@ -87,7 +88,7 @@ function PeriodFilter({
   onChange: (v: GroupBy) => void;
 }) {
   return (
-    <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+    <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
       {FILTER_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -279,6 +280,7 @@ function TreatmentPerformanceTable({
 
   // ── Mod 1: Tablo ──
   const TableView = () => (
+    <div className="overflow-x-auto">
     <table className="min-w-full">
       <thead>
         <tr className="border-b border-slate-100 bg-slate-50/50">
@@ -330,6 +332,7 @@ function TreatmentPerformanceTable({
         </tfoot>
       )}
     </table>
+    </div>
   );
 
   // ── Mod 2: Yatay çubuk grafik ──
@@ -984,7 +987,7 @@ function InventorySummaryCard() {
 
 function OwnerDashboard() {
   const [groupBy, setGroupBy] = useState<GroupBy>('month');
-  const { revenue, stats, doctorPerf, expiring, newPatients, loading } = useDashboard();
+  const { revenue, stats, doctorPerf, expiring, newPatients, loading, error } = useDashboard(groupBy);
   const { data: treatData, loading: treatLoading } = useTreatments(groupBy);
   const { data: byDoctorData, loading: byDoctorLoading } = useTreatmentsByDoctor(groupBy);
 
@@ -999,10 +1002,16 @@ function OwnerDashboard() {
         <PeriodFilter value={groupBy} onChange={setGroupBy} />
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
         <div className="xl:col-span-7">
           {/* Hero — kurtarılan ciro */}
-          <RevenueCard data={revenue} loading={loading} />
+          <RevenueCard data={revenue} loading={loading} periodLabel={PERIOD_LABELS[groupBy]} />
         </div>
         <div className="space-y-3 xl:col-span-5">
           {/* Stat kartları */}
@@ -1090,7 +1099,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48 rounded-lg" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[0,1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}
         </div>
       </div>

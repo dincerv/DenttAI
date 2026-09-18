@@ -11,6 +11,10 @@ import {
   ShieldCheck,
   Cable,
   Building2,
+  Banknote,
+  FileText,
+  Pill,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,13 +28,16 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard',              icon: LayoutDashboard, label: 'Dashboard',    module: 'dashboard' },
-  { href: '/dashboard/appointments', icon: Calendar,        label: 'Randevular',   module: 'appointments' },
-  { href: '/dashboard/waitlist',     icon: ListOrdered,     label: 'Yedek Liste',  module: 'waitlist' },
-  { href: '/dashboard/inventory',    icon: Package,         label: 'Envanter',     module: 'inventory' },
+  { href: '/dashboard',              icon: LayoutDashboard, label: 'Dashboard',      module: 'dashboard' },
+  { href: '/dashboard/appointments', icon: Calendar,        label: 'Randevular',     module: 'appointments' },
+  { href: '/dashboard/waitlist',     icon: ListOrdered,     label: 'Yedek Liste',    module: 'waitlist' },
+  { href: '/dashboard/inventory',    icon: Package,         label: 'Envanter',       module: 'inventory' },
+  { href: '/dashboard/payments',     icon: Banknote,        label: 'Ödemeler',       module: 'payments' },
+  { href: '/dashboard/invoices',     icon: FileText,        label: 'Faturalar',      module: 'invoices' },
+  { href: '/dashboard/prescriptions',icon: Pill,            label: 'e-Reçete',       module: 'prescriptions' },
   { href: '/dashboard/integrations', icon: Cable,           label: 'Entegrasyonlar', module: 'integrations' },
-  { href: '/dashboard/permissions',  icon: ShieldCheck,     label: 'Yetkiler',     module: 'permissions' },
-  { href: '/dashboard/admin/tenants',icon: Building2,       label: 'Klinikler',    module: 'admin' },
+  { href: '/dashboard/permissions',  icon: ShieldCheck,     label: 'Yetkiler',       module: 'permissions' },
+  { href: '/dashboard/admin/tenants',icon: Building2,       label: 'Klinikler',      module: 'admin' },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -40,20 +47,46 @@ const ROLE_LABELS: Record<string, string> = {
   assistant: 'Asistan',
 };
 
-export function Sidebar() {
+interface SidebarProps {
+  /** Mobilde sidebar görünür mü? */
+  open: boolean;
+  /** Mobilde overlay/kapatma butonuna tıklandığında */
+  onClose: () => void;
+}
+
+export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { can } = usePermissions();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-brand-900 text-white">
-      {/* Logo */}
+    <aside
+      className={cn(
+        // Temel: fixed, tam yükseklik, beyaz arka plan üstünde koyu
+        'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-brand-900 text-white',
+        // Geçiş animasyonu
+        'transition-transform duration-300 ease-in-out',
+        // Desktop (lg+): her zaman görünür
+        'lg:translate-x-0',
+        // Mobil: open state'ine göre göster/gizle
+        open ? 'translate-x-0' : '-translate-x-full',
+      )}
+    >
+      {/* Logo + mobil kapatma butonu */}
       <div className="flex h-16 items-center gap-3 border-b border-brand-800 px-6">
-        <Stethoscope className="h-7 w-7 text-brand-300" />
-        <div>
+        <Stethoscope className="h-7 w-7 shrink-0 text-brand-300" />
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-bold leading-tight">DentAI Flow</p>
           <p className="text-xs text-brand-400">Klinik Yönetim Paneli</p>
         </div>
+        {/* Sadece mobilde gösterilir */}
+        <button
+          onClick={onClose}
+          aria-label="Menüyü kapat"
+          className="lg:hidden ml-auto rounded-lg p-1.5 text-brand-300 hover:bg-brand-800 hover:text-white transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       {/* Navigation — yetki matrisine göre dinamik */}
@@ -65,6 +98,7 @@ export function Sidebar() {
               <li key={href}>
                 <Link
                   href={href}
+                  onClick={onClose}
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                     active

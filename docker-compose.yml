@@ -1,14 +1,12 @@
 # ============================================================
 # DentAI Flow — Monolith Docker Compose (Geliştirme)
 #
-# Eski yapı: 7 Python + 1 Node.js mikroservis + Nginx gateway + RabbitMQ
-# Yeni yapı: 1 Python monolith API + Next.js UI
-#
 # Servisler:
-#   - postgres  (DB)
-#   - redis     (cache + APScheduler job store)
-#   - api       (FastAPI monolith — port 8000)
-#   - ui        (Next.js — port 3000)
+#   - postgres   (DB)
+#   - redis      (cache + APScheduler job store)
+#   - rabbitmq   (mesaj kuyruğu — event-driven bildirimler)
+#   - api        (FastAPI monolith — port 8000)
+#   - ui         (Next.js — port 3000)
 # ============================================================
 
 services:
@@ -48,6 +46,24 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: dentai_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI (http://localhost:15672 → guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    networks:
+      - dentai-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ./services/api
@@ -78,17 +94,20 @@ services:
       # Import
       IMPORT_BATCH_SIZE: ${IMPORT_BATCH_SIZE:-200}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - dentai-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" 2>/dev/null || exit 1"]
       interval: 15s
-      timeout: 5s
+      timeout: 10s
       retries: 5
       start_period: 30s
 

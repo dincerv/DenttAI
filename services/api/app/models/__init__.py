@@ -8,6 +8,10 @@ from app.models.user import User, UserRole, RefreshToken
 
 # ── Randevu ───────────────────────────────────────────────
 from app.models.appointment import Appointment, AppointmentStatus
+from app.models.patient import Patient, InsuranceType
+from app.models.payment import Payment, PaymentTransaction, PaymentStatus, PaymentMethod, PayerType
+from app.models.invoice import Invoice, InvoiceItem, InvoiceType, InvoiceStatus, GibStatus
+from app.models.prescription import Prescription, PrescriptionItem, PrescriptionStatus, MedulaStatus
 
 # ── Yedek Liste ───────────────────────────────────────────
 from app.models.waitlist import Waitlist
@@ -40,6 +44,22 @@ __all__ = [
     # Appointment
     "Appointment",
     "AppointmentStatus",
+    "Patient",
+    "InsuranceType",
+    "Payment",
+    "PaymentTransaction",
+    "PaymentStatus",
+    "PaymentMethod",
+    "PayerType",
+    "Invoice",
+    "InvoiceItem",
+    "InvoiceType",
+    "InvoiceStatus",
+    "GibStatus",
+    "Prescription",
+    "PrescriptionItem",
+    "PrescriptionStatus",
+    "MedulaStatus",
     # Waitlist
     "Waitlist",
     # Inventory

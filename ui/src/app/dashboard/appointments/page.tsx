@@ -5,10 +5,13 @@ import { tr } from 'date-fns/locale';
 import {
   ChevronLeft, ChevronRight,
   RefreshCw, ListPlus, User, Filter, X, Phone, Stethoscope, Plus, Pencil, MessageCircle,
+  Wallet, Pill,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { appointmentApi, integrationApi, waitlistApi } from '@/lib/api-client';
 import { PatientNotesPanel } from '@/components/dashboard/PatientNotesPanel';
+import { CreatePaymentModal } from '@/components/payments/CreatePaymentModal';
+import { CreatePrescriptionModal } from '@/components/prescriptions/CreatePrescriptionModal';
 import { useAuth } from '@/hooks/useAuth';
 import type { Appointment, AppointmentCreateBody } from '@/types';
 
@@ -48,13 +51,15 @@ const STATUS_LABELS: Record<string, string> = {
 const SPECIALTY_OPTIONS = [
   'Ortodonti',
   'Pedodonti',
-  'İmplant',
   'Cerrahi',
+  'İmplant',
+  'Genel Diş Hekimliği',
   'Endodonti',
   'Periodontoloji',
   'Protez',
-  'Genel Diş Hekimliği',
 ];
+
+const TREATMENT_HINTS = ['Dolgu', 'Kanal', 'İmplant', 'Kron', 'Çekim', 'Protez', 'Ortodonti', 'Temizlik', 'Beyazlatma', 'Kontrol'];
 
 function normalizeToTrLocal10(raw: string): string {
   const digits = raw.replace(/\D/g, '');
@@ -230,6 +235,7 @@ function DoctorFilter({
 /* ── Appointment detail modal ─────────────────────────── */
 function AppointmentDetail({
   appt, doctors, canEdit, onClose, onAddToWaitlist, addingToWaitlist, onUpdated,
+  onCreatePayment, onCreatePrescription,
 }: {
   appt: Appointment;
   doctors: Doctor[];
@@ -238,6 +244,8 @@ function AppointmentDetail({
   onAddToWaitlist: (a: Appointment) => void;
   addingToWaitlist: boolean;
   onUpdated: () => void;
+  onCreatePayment: (a: Appointment) => void;
+  onCreatePrescription: (a: Appointment) => void;
 }) {
   const dt = parseISO(appt.scheduled_at);
   const [editMode, setEditMode] = useState(false);
@@ -349,9 +357,24 @@ function AppointmentDetail({
     }
   }
 
+  async function handleCancel() {
+    if (!confirm('Randevuyu iptal ederseniz aynı branştaki yedek listedeki hasta bu slota alınır. Devam edilsin mi?')) return;
+    try {
+      setSaving(true);
+      await appointmentApi.cancel(appt.id);
+      toast.success('Randevu iptal edildi');
+      onUpdated();
+      onClose();
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, 'İptal başarısız'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-2xl mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-5 py-4 flex items-center justify-between">
           <h3 className="text-base font-semibold text-white">Randevu Detayı</h3>
           <button onClick={onClose} className="rounded-full p-1 text-white/70 hover:text-white hover:bg-white/10"><X className="h-4 w-4" /></button>
@@ -397,12 +420,18 @@ function AppointmentDetail({
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em]">İşlem Tipi</p>
               </div>
               {editMode ? (
-                <input
-                  value={typeValue}
-                  onChange={(e) => setTypeValue(e.target.value)}
-                  placeholder="Orn. Kontrol"
-                  className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-                />
+                <>
+                  <input
+                    list="treatment-hints"
+                    value={typeValue}
+                    onChange={(e) => setTypeValue(e.target.value)}
+                    placeholder="Örn. Dolgu"
+                    className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                  />
+                  <datalist id="treatment-hints">
+                    {TREATMENT_HINTS.map((t) => <option key={t} value={t} />)}
+                  </datalist>
+                </>
               ) : (
                 <p className="text-base font-semibold text-blue-950">
                   {appt.type || 'İşlem tipi girilmemiş'}
@@ -411,7 +440,7 @@ function AppointmentDetail({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-lg bg-slate-50 p-3">
                 <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Hasta Tipi</p>
                 {editMode ? (
@@ -443,7 +472,7 @@ function AppointmentDetail({
               </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Tarih</p>
               {editMode ? (
@@ -524,11 +553,12 @@ function AppointmentDetail({
           <PatientNotesPanel
             patientId={appt.patient_id}
             patientName={appt.patient_name ?? undefined}
+            appointmentId={appt.id}
             canAdd={true}
             defaultNoteType="treatment"
           />
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
             {canEdit && (
               <button
                 onClick={editMode ? handleSave : () => setEditMode(true)}
@@ -550,6 +580,16 @@ function AppointmentDetail({
               </button>
             )}
 
+            {canEdit && appt.status !== 'cancelled' && (
+              <button
+                onClick={handleCancel}
+                disabled={saving}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+              >
+                İptal et
+              </button>
+            )}
+
             {appt.status === 'completed' && (
               <button
                 onClick={handlePostOpReachout}
@@ -559,6 +599,25 @@ function AppointmentDetail({
                 <MessageCircle className="h-4 w-4" />
                 {reachingOut ? 'Gonderiliyor...' : 'Tedavi Sonrasi Ulas'}
               </button>
+            )}
+
+            {appt.status !== 'cancelled' && (
+              <>
+                <button
+                  onClick={() => onCreatePayment(appt)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2.5 text-sm font-medium text-teal-700 hover:bg-teal-100"
+                >
+                  <Wallet className="h-4 w-4" />
+                  Ödeme al
+                </button>
+                <button
+                  onClick={() => onCreatePrescription(appt)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-medium text-violet-700 hover:bg-violet-100"
+                >
+                  <Pill className="h-4 w-4" />
+                  Reçete yaz
+                </button>
+              </>
             )}
 
             <button
@@ -714,7 +773,7 @@ function CreateAppointmentModal({
               </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Hasta Tipi</label>
               <PatientTypeToggle value={isNewPatient} onChange={setIsNewPatient} disabled={saving} />
@@ -791,11 +850,15 @@ function CreateAppointmentModal({
             <div className="md:col-span-2">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Islem Tipi</label>
               <input
+                list="create-treatment-hints"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                placeholder="Orn. Kontrol"
+                placeholder="Örn. Dolgu"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
               />
+              <datalist id="create-treatment-hints">
+                {TREATMENT_HINTS.map((t) => <option key={t} value={t} />)}
+              </datalist>
             </div>
             <div className="md:col-span-2">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Not</label>
@@ -913,6 +976,8 @@ export default function AppointmentsPage() {
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
   const [addingWaitlist, setAddingWaitlist] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [paymentPrefill, setPaymentPrefill] = useState<Appointment | null>(null);
+  const [rxPrefill, setRxPrefill] = useState<Appointment | null>(null);
 
   const canEditAppointments = useMemo(() => {
     if (!user) return false;
@@ -998,7 +1063,7 @@ export default function AppointmentsPage() {
           </h2>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <DoctorFilter doctors={doctors} selected={selectedDoctors} onChange={setSelectedDoctors} />
           {canEditAppointments && (
             <button
@@ -1145,10 +1210,38 @@ export default function AppointmentsPage() {
           onClose={() => setSelectedAppt(null)}
           onAddToWaitlist={handleAddToWaitlist}
           addingToWaitlist={addingWaitlist}
+          onCreatePayment={(a) => { setSelectedAppt(null); setPaymentPrefill(a); }}
+          onCreatePrescription={(a) => { setSelectedAppt(null); setRxPrefill(a); }}
           onUpdated={() => {
             setSelectedAppt(null);
             fetchAppointments();
           }}
+        />
+      )}
+
+      {paymentPrefill && (
+        <CreatePaymentModal
+          prefill={{
+            patient_id: paymentPrefill.patient_id,
+            patient_name: paymentPrefill.patient_name ?? 'Hasta',
+            patient_phone: paymentPrefill.patient_phone,
+            appointment_id: paymentPrefill.id,
+            treatment_type: paymentPrefill.type,
+          }}
+          onClose={() => setPaymentPrefill(null)}
+          onCreated={() => setPaymentPrefill(null)}
+        />
+      )}
+
+      {rxPrefill && (
+        <CreatePrescriptionModal
+          prefill={{
+            patient_id: rxPrefill.patient_id,
+            patient_name: rxPrefill.patient_name ?? 'Hasta',
+            appointment_id: rxPrefill.id,
+          }}
+          onClose={() => setRxPrefill(null)}
+          onCreated={() => setRxPrefill(null)}
         />
       )}
 
