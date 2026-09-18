@@ -6,7 +6,7 @@ groups:
         for: 10m
         labels:
           severity: warning
-          service: integration-service
+          service: dentai-api
         annotations:
           summary: "Webhook p95 latency is high"
           description: "Webhook p95 latency exceeded 1.2s for 10 minutes."
@@ -16,7 +16,7 @@ groups:
         for: 5m
         labels:
           severity: critical
-          service: integration-service
+          service: dentai-api
         annotations:
           summary: "Webhook error rate is high"
           description: "Webhook 5xx ratio is over 3% for 5 minutes."

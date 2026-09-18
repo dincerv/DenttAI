@@ -1,70 +1,46 @@
 # DentAI Flow
 
-> Diş kliniklerinde randevu kaçaklarını önleyen, malzeme ömrünü takip eden ve **Kurtarılan Geliri** raporlayan çok kiracılı mikroservis ekosistemi.  
-> "Başla tuşuna basmaya hazır" — tüm sistem tek `docker compose up` komutuyla ayağa kalkar.
+> Diş kliniklerinde randevu kaçaklarını önleyen, malzeme ömrünü takip eden ve **Kurtarılan Geliri** raporlayan çok kiracılı Klinik SaaS.  
+> Geliştirme: `docker compose up --build -d`. Canlı: Railway (`ui` + `services/api`).
 
 ---
 
 ## Mimari Özeti
 
 ```
-Browser / Mobile
-      │
-      ▼
-  Next.js Frontend (port 3000)
-      │
-      ▼
-  Nginx API Gateway (port 80/443)
-      │
-  ┌───┴────────────────────────────────────────┐
-  │  auth      appt    inventory   analytics   │
-  │  (8001)   (8002)    (8003)      (8004)     │
-  │         notification  integration          │
-  │          (3001)       (8005)               │
-  └────────────┬───────────────────────────────┘
-               ▼
-     PostgreSQL 16 │ Redis 7 │ RabbitMQ 3.13
+Browser
+  → Next.js ui (:3000)
+    → FastAPI monolith services/api (:8000)
+      → PostgreSQL 16 · Redis 7 · RabbitMQ 3.13
 ```
 
-| Servis | Dil / Framework | Sorumluluk | Port |
-|--------|----------------|-----------|------|
-| **auth-service** | Python / FastAPI | Multi-tenant JWT, refresh token, RLS | 8001 |
-| **appointment-service** | Python / FastAPI | Randevu CRUD, WaitlistEngine, RabbitMQ | 8002 |
-| **notification-service** | Node.js / TypeScript | WhatsApp bildirimleri, BullMQ scheduler | 3001 |
-| **inventory-service** | Python / FastAPI | QR stok takibi, anomali tespiti | 8003 |
-| **analytics-service** | Python / FastAPI | Patron Dashboard, Recovered Revenue | 8004 |
-| **integration-service** | Python / FastAPI | Excel/JSON hasta içe aktarma (DentSoft) | 8005 |
-| **whatsapp-ingestion-service** | Python / FastAPI | WhatsApp webhook ingest + Celery dispatch | 8010 |
-| **gateway** | Nginx 1.27 | Reverse proxy, rate limiting | 80/443 |
-| **frontend** | Next.js 14 App Router | Klinik yönetim paneli | 3000 |
+| Servis | Dil | Port | Sorumluluk |
+|--------|-----|------|------------|
+| **ui** | Next.js 14 | 3000 | Klinik paneli |
+| **api** | Python / FastAPI | 8000 | Auth, randevu, stok, ödeme, fatura, e-reçete, analytics, WhatsApp |
+| **postgres** | PostgreSQL 16 | 5432 | RLS multi-tenant veri |
+| **redis** | Redis 7 | 6379 | Cache + scheduler |
+| **rabbitmq** | RabbitMQ 3.13 | 5672 | Olay kuyruğu |
+
+Canlı UI: https://dentai-ui-production.up.railway.app  
+Canlı API: https://denttai-production.up.railway.app
 
 ---
 
 ## Klasör Yapısı
 
 ```
-dentai-flow/
-├── docker-compose.yml          ← Geliştirme ortamı
-├── docker-compose.prod.yml     ← Production (log limiti, bellek limiti, restart:always)
-├── .env.example                ← Ortam değişkenleri şablonu
-│
-├── services/
-│   ├── auth-service/
-│   ├── appointment-service/
-│   ├── notification-service/
-│   ├── inventory-service/
-│   ├── analytics-service/
-│   └── integration-service/    ← Yeni: DentSoft mapping katmanı
-│
-├── gateway/
-│   ├── Dockerfile
-│   └── nginx.conf
-│
-├── frontend/                   ← Next.js 14 App Router
-│
-└── shared/
-    ├── auth_middleware.py
-    └── db/init/01_init.sql     ← 10 tablo, RLS policy, indeksler
+daf2026/
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── railway.toml              ← API
+├── ui/railway.toml           ← UI
+├── ui/                       ← Next.js
+├── services/api/             ← FastAPI monolith
+├── shared/                   ← ortak Python + SQL migration
+├── scripts/                  ← backup.ps1, restore.ps1, seed
+├── gateway/                  ← isteğe bağlı Nginx (canlıda kullanılmıyor)
+└── monitoring/               ← Prometheus/Grafana (ayrı compose)
 ```
 
 ---
@@ -102,13 +78,10 @@ Tarayıcıda aç:
 
 | Adres | İçerik |
 |-------|--------|
-| http://localhost:3000 | Dashboard (Frontend) |
-| http://localhost/api/auth/docs | Auth API Docs |
-| http://localhost/api/appointments/docs | Appointment API Docs |
-| http://localhost/api/analytics/docs | Analytics API Docs |
-| http://localhost/api/integration/docs | Integration API Docs |
-| http://localhost/api/whatsapp/health | WhatsApp Ingestion Health |
-| http://localhost:15672 | RabbitMQ Management UI |
+| http://localhost:3000 | Klinik paneli |
+| http://localhost:8000/docs | API OpenAPI |
+| http://localhost:8000/health | API health |
+| http://localhost:15672 | RabbitMQ UI |
 
 ---
 
@@ -120,10 +93,9 @@ docker compose -f docker-compose.prod.yml up --build -d
 ```
 
 Production compose farkları:
-- Dahili servisler **dış porta açılmaz** (sadece gateway: 80/443, frontend: 3000)
-- Her servis için bellek limiti (`deploy.resources.limits.memory: 256m`)
-- JSON loglama + rotasyon (`max-size: 50m, max-file: 5`)
-- `restart: always`
+- Postgres/Redis/API dış porta açılmaz (UI: 3000)
+- `restart: always`, JSON log rotasyonu
+- Yedek: `powershell -File scripts/backup.ps1`
 
 ---
 
@@ -269,7 +241,7 @@ Varsayılan: mock mod (mesajlar yalnızca veritabanına yazılır, gerçek gönd
 
 3. Servisi yeniden başlat:
    ```bash
-   docker compose restart notification-service
+   docker compose restart api
    ```
 
 **Retry Politikası:** Başarısız gönderimler 500ms → 1s → 2s gecikmeyle 3 kez daha denenir. HTTP 4xx hataları yeniden denenmez.

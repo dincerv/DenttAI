@@ -1,10 +1,7 @@
 #!/bin/bash
-# ============================================================
-# DentAI Flow — Health Check Script
-# Tüm servislerin sağlık durumunu kontrol eder.
-# Cron veya monitoring aracıyla kullanılabilir.
+# DentAI Flow — Health Check (monolith)
 # Kullanım: ./scripts/healthcheck.sh
-# ============================================================
+# BASE_URL varsayılan: http://localhost:8000
 
 set -euo pipefail
 
@@ -15,7 +12,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-BASE_URL="${BASE_URL:-http://localhost}"
+BASE_URL="${BASE_URL:-http://localhost:8000}"
 FAILED=0
 
 check() {
@@ -24,29 +21,20 @@ check() {
   local response
   response=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "${url}" 2>/dev/null || echo "000")
   if [ "${response}" = "200" ]; then
-    echo "✓ ${name}: OK"
+    echo "OK  ${name}"
   else
-    echo "✗ ${name}: FAIL (HTTP ${response})"
+    echo "FAIL ${name} (HTTP ${response})"
     FAILED=$((FAILED + 1))
   fi
 }
 
 echo "=== DentAI Flow Health Check === ($(date))"
-echo ""
+check "API /health"          "${BASE_URL}/health"
+check "API /api/health"      "${BASE_URL}/api/health"
+check "API /api/auth/health" "${BASE_URL}/api/auth/health"
 
-check "Gateway"           "${BASE_URL}/health"
-check "Auth Service"      "${BASE_URL}/api/auth/health"
-check "Appointment Svc"   "${BASE_URL}/api/appointments/health"
-check "Notification Svc"  "${BASE_URL}/api/notifications/health"
-check "Inventory Service"  "${BASE_URL}/api/inventory/health"
-check "Analytics Service"  "${BASE_URL}/api/analytics/health"
-check "Integration Svc"   "${BASE_URL}/api/integration/health"
-
-echo ""
 if [ ${FAILED} -gt 0 ]; then
-  echo "⚠ ${FAILED} servis sağlıksız!"
+  echo "${FAILED} check failed"
   exit 1
-else
-  echo "✓ Tüm servisler sağlıklı."
-  exit 0
 fi
+echo "All checks passed."

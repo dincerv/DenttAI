@@ -15,12 +15,7 @@ scrape_configs:
     static_configs:
       - targets: ["prometheus:9090"]
 
-  - job_name: integration-service
+  - job_name: dentai-api
     metrics_path: /metrics
     static_configs:
-      - targets: ["dentai_integration:8005"]
-
-  - job_name: whatsapp-ingestion-service
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["dentai_whatsapp_ingestion:8010"]
+      - targets: ["dentai_api:8000"]

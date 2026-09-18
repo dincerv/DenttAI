@@ -24,55 +24,52 @@ DentAI Flow, diş kliniklerinde randevu kaçaklarını önleyen, malzeme ömrün
 ## Sistem Mimarisi
 
 ```
-Browser → Next.js (ui:3000) → Nginx Gateway (:80) → Python/Node Mikroservisler → PostgreSQL 16 + Redis 7 + RabbitMQ 3.13
+Browser → Next.js (ui:3000) → FastAPI monolith (services/api:8000) → PostgreSQL 16 + Redis 7 + RabbitMQ 3.13
 ```
+
+Canlı: UI `https://dentai-ui-production.up.railway.app` · API `https://denttai-production.up.railway.app`
 
 | Servis | Dil / Framework | Port | Sorumluluk |
 |--------|----------------|------|------------|
-| auth-service | Python / FastAPI | 8001 | JWT, refresh token, RBAC, RLS context, kullanıcı CRUD |
-| appointment-service | Python / FastAPI | 8002 | Randevu CRUD, WaitlistEngine, RabbitMQ event yayını |
-| inventory-service | Python / FastAPI | 8003 | QR stok takibi, FEFO, batch yönetimi, anomali tespiti |
-| analytics-service | Python / FastAPI | 8004 | Dashboard metrikleri, Recovered Revenue, AI chat |
-| integration-service | Python / FastAPI | 8005 | WhatsApp webhook, PMS sync (DentSoft/Dr.Dentes), LLM/RAG, Celery |
-| notification-service | Node / TypeScript | 3001 | WhatsApp gönderim (Meta Cloud API / mock), BullMQ scheduler |
-| whatsapp-ingestion | Python / FastAPI | 8010 | Webhook ingest + Celery dispatch |
-| gateway | Nginx 1.27 | 80 | Reverse proxy, rate limit, güvenlik header'ları |
-| frontend | Next.js 14 (App Router) | 3000 | Klinik yönetim paneli |
+| ui | Next.js 14 | 3000 | Klinik yönetim paneli |
+| api | Python / FastAPI | 8000 | JWT/RBAC, randevu, stok, ödeme, fatura, e-reçete, analytics, WhatsApp, PMS |
+| postgres | PostgreSQL 16 | 5432 | RLS + JWT `clinic_id` |
+| redis | Redis 7 | 6379 | Cache + APScheduler |
+| rabbitmq | RabbitMQ 3.13 | 5672 | Olay kuyruğu |
 
 ## Kritik Mimari Kurallar
 
-1. **Next.js backend'e doğrudan bağlanmaz** — tüm API çağrıları `apiClient` (`src/lib/api-client.ts`) aracılığıyla `NEXT_PUBLIC_API_URL` üzerinden Nginx gateway'e gider.
-2. **Veritabanına sadece backend servisler erişir** — Next.js'te Prisma, pg, Drizzle veya başka DB client YOKTUR ve OLMAYACAKTIR.
-3. **Multi-tenancy:** PostgreSQL RLS + JWT `clinic_id` claim. Her sorgu `SET LOCAL app.current_clinic_id` ile izole edilir.
-4. **Docker Compose** ile çalıştırılır — `docker compose up --build -d`.
-5. **Gateway route'ları** `gateway/routes.conf` dosyasında tanımlıdır. Yeni backend endpoint eklendiğinde burası da güncellenmelidir.
+1. **Next.js backend'e doğrudan bağlanmaz** — tüm API çağrıları `apiClient` (`ui/src/lib/api-client.ts`) ile `NEXT_PUBLIC_API_URL` üzerinden gider.
+2. **Veritabanına sadece API erişir** — Next.js'te Prisma, pg, Drizzle YOKTUR.
+3. **Multi-tenancy:** PostgreSQL RLS + JWT `clinic_id`. Sorgu `SET LOCAL app.current_clinic_id`.
+4. **Yerel:** `docker compose up --build -d`. **Canlı:** Railway (`railway.toml` + `ui/railway.toml`).
+5. **Yedek:** kod GitHub; veri `powershell -File scripts/backup.ps1` → `backups/` (gitignored).
 
 ## Aktif Klasör Haritası
 
-| Klasör | Açıklama | Docker'da Kullanılıyor? |
-|--------|----------|------------------------|
-| `ui/` | Aktif Next.js frontend | EVET — `docker-compose.yml` |
-| `services/` | Backend mikroservisler | EVET — `docker-compose.yml` |
-| `shared/` | Ortak Python modülleri (auth_middleware, csrf, rate_limiter, DB init/migrations) | EVET |
-| `gateway/` | Nginx config | EVET |
-| `monitoring/` | Prometheus + Grafana + Alertmanager | Ayrı compose |
-| `scripts/` | Deploy, backup, restore, seed | Manuel |
-| ~~`frontend/`~~ | `ui/` ile duplicate — **KULLANMA** | HAYIR |
-| ~~`backend/`~~ | `services/` + `shared/` ile duplicate — **KULLANMA** | HAYIR |
+| Klasör | Açıklama | Kullanılıyor? |
+|--------|----------|---------------|
+| `ui/` | Next.js frontend | EVET |
+| `services/api/` | FastAPI monolith | EVET |
+| `shared/` | ortak middleware + SQL migrations | EVET |
+| `scripts/` | backup, restore, seed | EVET |
+| `gateway/` | eski Nginx — canlıda yok | HAYIR (ileride reverse proxy) |
+| `monitoring/` | Prometheus/Grafana | ayrı compose |
 
-## Bilinen Teknik Borçlar
+## Bilinen Teknik Borçlar / Sıra
 
-### Faz 1 tamamlandı (2026-08-02)
-- middleware.ts + `dentai_session` cookie guard
-- Secret default'lar kaldırıldı (`services/`)
-- Public register kapalı (`ALLOW_PUBLIC_REGISTER=false`)
-- PermissionContext default deny
-- Migration `016` (şema drift + FK)
-- Hassas dosyalar gitignore'da
+### Bitti
+- Site içi ödeme, fatura, e-reçete, randevu bağları, kurtarılan ciro
+- Duplicate `backend/`, `_deprecated_frontend/`, eski `services/*-service` kopyaları silindi
+- Neon + yerel DB yedek scripti
 
-### Kalan (Faz 2+)
-1. `frontend/` ve `backend/` klasörleri duplicate — silinecek
-2. Bazı bileşenler (`SettingsPanel`, `WaitlistForm`, `SmartCalendar`, `PatientDetailCard`) `apiClient` yerine `fetch('/api/...')` kullanıyor — kırık çağrılar
-3. UI primitif kütüphanesi eksik — yalnızca Button, Badge, Skeleton var
-4. Monolitik sayfa dosyaları (1000+ satır) parçalanmalı
-5. `backend/apps/` içindeki eski secret default kopyaları — aktif değil ama temizlenmeli
+### Sıradaki ürün işi
+1. **GİB e-Fatura / e-Arşiv / e-SMM** — şu an klinik kaydı; resmi gönderim yok
+2. **Medula e-reçete** — taslak/kesim var; SGK gönderimi yok
+3. **WhatsApp / SMS resmi hat** — webhook ve hatırlatma kodu var; canlı Meta/SMS son adım
+
+### İkincil borç
+- CSRF + rate limit production'da kapalı
+- Bazı eski bileşenlerde `fetch('/api/...')` kırık kalabilir
+- Büyük sayfa dosyaları parçalanabilir
+- `gateway/` kullanılmıyor; ileride domain/TLS için tutuluyor

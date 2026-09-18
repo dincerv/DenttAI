@@ -1,12 +1,13 @@
-# Vercel Login — Neon + Upstash + Railway
+# Cloud login — Neon + Railway
 
-UI Vercel’de kalır. Login için **Postgres (Neon) + Redis (Upstash) + auth API (Railway)** gerekir.  
+Asıl canlı: Railway UI + monolith API. Vercel yedek arayüz olabilir.  
 Next.js doğrudan veritabanına bağlanmaz.
 
 ```
-Browser → Vercel (ui) → NEXT_PUBLIC_API_URL → Railway gateway → auth-service
-                                              ↓                ↓
-                                           Neon Postgres    Upstash Redis
+Browser → Railway UI (veya Vercel)
+        → NEXT_PUBLIC_API_URL
+        → Railway API (services/api)
+        → Neon Postgres + Redis
 ```
 
 ---
@@ -72,23 +73,17 @@ curl http://localhost:8081/api/auth/health
 ### Seçenek B — Railway Dashboard
 
 1. Repo’yu Railway’e bağla (`dincerv/DenttAI`).
-2. **Servis 1 — auth**
-   - Dockerfile: `services/auth-service/Dockerfile`
-   - Root: repo kökü
-   - Env: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `ENVIRONMENT=production`,  
-     `CORS_ALLOWED_ORIGINS=https://dentt-ai.vercel.app`, `ALLOW_PUBLIC_REGISTER=false`
-   - Private networking adı tercihen `auth-service` (veya gateway’de `AUTH_SERVICE_HOST` set et)
-3. **Servis 2 — gateway**
-   - Dockerfile: `gateway/Dockerfile.cloud`
-   - Public domain generate et
-   - Env: `AUTH_SERVICE_HOST=<auth internal host>`, `AUTH_SERVICE_PORT=8001`
-4. Gateway public URL örneği: `https://dentai-gateway.up.railway.app`
+2. **API** — `railway.toml` / `services/api/Dockerfile`
+   - Env: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `ENVIRONMENT=production`,
+     `CORS_ALLOWED_ORIGINS=https://dentai-ui-production.up.railway.app`
+3. **UI** — `ui/railway.toml` / `ui/Dockerfile`
+   - Env: `NEXT_PUBLIC_API_URL=https://denttai-production.up.railway.app/api`
 
 Doğrulama:
 
 ```text
-GET https://<gateway>/api/auth/health
-→ {"status":"ok","service":"auth-service","checks":{"postgres":"ok","redis":"ok"}}
+GET https://denttai-production.up.railway.app/health
+→ {"status":"ok","service":"dentai-api",...}
 ```
 
 ---

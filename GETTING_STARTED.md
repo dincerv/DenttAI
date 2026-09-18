@@ -13,9 +13,7 @@
 ```
 Tarayıcı → UI (localhost:3000)
               ↓
-         Nginx Gateway (localhost:8081/api)
-              ↓
-         auth · appointment · inventory · analytics · integration · notification · whatsapp-ingestion
+         API monolith (localhost:8000)
               ↓
          PostgreSQL · Redis · RabbitMQ
 ```
@@ -23,13 +21,13 @@ Tarayıcı → UI (localhost:3000)
 | Servis | Container | Port |
 |--------|-----------|------|
 | Frontend | `dentai_ui` | http://localhost:3000 |
-| API Gateway | `dentai_gateway` | http://localhost:8081 |
+| API | `dentai_api` | http://localhost:8000 |
 | PostgreSQL | `dentai_postgres` | localhost:5432 |
 | Redis | `dentai_redis` | localhost:6379 |
 | RabbitMQ UI | `dentai_rabbitmq` | http://localhost:15672 |
 
-> Not: Eski `backend/Dockerfile` (tek container) eksikti ve build kırılıyordu.  
-> `docker-compose.yml` mikroservis + gateway yapısına geri alındı.
+Canlı: https://dentai-ui-production.up.railway.app  
+Yedek: `powershell -File scripts/backup.ps1`
 
 ---
 
@@ -42,7 +40,7 @@ Kurulu olmalı:
 | **Docker Desktop** | Çalışır durumda (whale ikonu yeşil) |
 | **Git** | Repo için |
 | **Node.js 20+** | Sadece UI’yi lokal hot-reload ile çalıştıracaksan |
-| **Python 3.11+** | Sadece `reseed.py` için |
+| **Python 3.11+** | Opsiyonel (seed scriptleri) |
 
 PowerShell’de kontrol:
 
@@ -86,7 +84,7 @@ JWT_EXPIRE_MINUTES=60
 WHATSAPP_PROVIDER=mock
 WHATSAPP_MOCK=true
 
-NEXT_PUBLIC_API_URL=http://localhost:8081/api
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
 ```
 
 > Not: `docker-compose.yml` içinde bazı default şifreler var; `.env` olmasa da çoğu zaman ayağa kalkar. Yine de `.env` kullanmak doğru alışkanlık.
@@ -101,7 +99,7 @@ copy .env.local.example .env.local
 `ui/.env.local` içeriği:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8081/api
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
 ```
 
 ---
@@ -123,7 +121,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Hepsi `running` / `healthy` olmalı: `postgres`, `redis`, `rabbitmq`, `gateway`, `ui` ve mikroservisler.
+Hepsi `running` / `healthy` olmalı: `postgres`, `redis`, `rabbitmq`, `api`, `ui`.
 
 ### Log izleme
 
@@ -131,11 +129,11 @@ Hepsi `running` / `healthy` olmalı: `postgres`, `redis`, `rabbitmq`, `gateway`,
 docker compose logs -f
 ```
 
-Sadece gateway veya auth:
+Sadece API veya UI:
 
 ```powershell
-docker compose logs -f gateway
-docker compose logs -f auth-service
+docker compose logs -f api
+docker compose logs -f ui
 ```
 
 Durdurmak:
@@ -158,19 +156,16 @@ docker compose up --build -d
 Tarayıcı veya PowerShell:
 
 ```powershell
-# Gateway health
-curl http://localhost:8081/health
-
-# UI
+curl http://localhost:8000/health
 start http://localhost:3000
 ```
 
 | Adres | Ne |
 |-------|----|
 | http://localhost:3000 | Frontend (login) |
-| http://localhost:8081/health | Gateway health |
-| http://localhost:8081/api/auth/docs | Auth OpenAPI |
-| http://localhost:15672 | RabbitMQ Management (`dentai` / `.env` şifresi) |
+| http://localhost:8000/health | API health |
+| http://localhost:8000/docs | API OpenAPI |
+| http://localhost:15672 | RabbitMQ Management |
 
 ---
 
@@ -204,14 +199,11 @@ ON CONFLICT DO NOTHING;
 "@ | docker exec -i dentai_postgres psql -U dentai -d dentai_db
 ```
 
-### Tam reseed (Python 3 kuruluysa)
+### Demo seed
 
 ```powershell
-python reseed.py
-# veya: py -3 reseed.py
+python scripts/seed_demo_clinic_data.py
 ```
-
-> ENTER ile onay ister. DB’yi temizleyip zengin demo veri doldurur.
 
 ### Demo giriş bilgileri
 
@@ -258,7 +250,9 @@ Gateway + servisleri Docker’da bırak, UI’de hot reload:
 ```powershell
 # Terminal 1 — altyapı + API (UI hariç)
 cd C:\Users\dince\Desktop\daf2026
-docker compose up -d postgres redis rabbitmq auth-service appointment-service inventory-service analytics-service integration-service whatsapp-ingestion-service notification-service gateway
+```powershell
+docker compose up -d postgres redis rabbitmq api
+```
 
 # Terminal 2 — UI lokal
 cd C:\Users\dince\Desktop\daf2026\ui
@@ -267,7 +261,7 @@ npm run dev
 ```
 
 Sonra: http://localhost:3000  
-API: `NEXT_PUBLIC_API_URL=http://localhost:8081/api`
+API: `NEXT_PUBLIC_API_URL=http://localhost:8000/api`
 
 > `ui` container’ı da çalışıyorsa port 3000 çakışır:
 
@@ -281,14 +275,10 @@ docker compose stop ui
 
 | Sorun | Çözüm |
 |-------|--------|
-| Port 3000 / 8081 / 5432 dolu | O portu kullanan uygulamayı kapat veya `docker compose down` |
-| Gateway / auth unhealthy | `docker compose logs gateway auth-service --tail 80` |
-| `Dockerfile: no such file` | Eski `backend` servisi kaldırıldı; güncel `docker-compose.yml` kullan |
-| Gateway `no such file` (entrypoint) | Windows CRLF — `gateway/docker-entrypoint.sh` LF olmalı; `docker compose build gateway` |
-| Postgres unhealthy / `database "dentai" does not exist` | Healthcheck DB adı: `dentai_db` — güncel compose kullan; gerekirse `docker compose down -v` |
-| Init SQL hata / RLS function | `shared/db/init/01_init.sql` güncellendi; volume’u sıfırla: `docker compose down -v` |
-| Login 401 / network error | `NEXT_PUBLIC_API_URL` = `http://localhost:8081/api` mi? |
-| Demo hesap yok | `python reseed.py` |
+| Port 3000 / 8000 / 5432 dolu | O portu kullanan uygulamayı kapat veya `docker compose down` |
+| API unhealthy | `docker compose logs api --tail 80` |
+| Login 401 / network error | `NEXT_PUBLIC_API_URL` = `http://localhost:8000/api` mi? |
+| Demo hesap yok | `python scripts/seed_demo_clinic_data.py` |
 | Docker Desktop kapalı | Desktop’ı aç, engine yeşil olana kadar bekle |
 | İlk init şema eksik | Postgres volume’u silip yeniden kur: `docker compose down -v` sonra `up --build -d` |
 
@@ -314,10 +304,8 @@ Windows’ta Make yoksa doğrudan `docker compose ...` kullan.
 
 Bunlar yeşil olmadan kod değiştirmeye başlama:
 
-- [ ] `docker compose ps` → backend + ui healthy/running  
+- [ ] `docker compose ps` → api + ui healthy/running  
 - [ ] http://localhost:3000 açılıyor  
-- [ ] http://localhost:8081/health OK  
+- [ ] http://localhost:8000/health OK  
 - [ ] `admin@demo.com` ile login oluyor  
-- [ ] Dashboard sayfaları yükleniyor  
-
-Tamamsa sıradaki dosya: **[`PHASE_1_ROADMAP.md`](./PHASE_1_ROADMAP.md)** — R-05’ten başla.
+- [ ] Dashboard sayfaları yükleniyor

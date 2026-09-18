@@ -47,7 +47,7 @@ stages:
     steps:
     - script: |
         BASE_URL="${API_BASE_URL:-https://$(API_DOMAIN)}"
-        for endpoint in /health /api/auth/health /api/appointments/health /api/notifications/health /api/inventory/health /api/analytics/health /api/integration/health; do
+        for endpoint in /health /api/health /api/auth/health; do
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 15 "${BASE_URL}${endpoint}" || echo "000")
           if [ "$STATUS" = "200" ]; then
             echo "✓ ${endpoint}: OK"
