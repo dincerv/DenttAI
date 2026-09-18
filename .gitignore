@@ -32,3 +32,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# DB dumps — asla commit etme (şifreli hasta verisi içerir)
+backups/
