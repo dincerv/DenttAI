@@ -22,6 +22,7 @@ export type Module =
   | 'dashboard'
   | 'appointments'
   | 'waitlist'
+  | 'patients'
   | 'inventory'
   | 'integrations'
   | 'permissions'
@@ -38,6 +39,7 @@ const MODULE_ACTIONS: Record<Module, Action[]> = {
   dashboard:    ['view'],
   appointments: ['view', 'create', 'edit', 'delete'],
   waitlist:     ['view', 'create', 'edit', 'delete'],
+  patients:     ['view', 'create', 'edit', 'delete'],
   inventory:    ['view', 'create', 'edit', 'delete'],
   integrations: ['view', 'create', 'edit', 'delete'],
   permissions:  ['view', 'create', 'edit', 'delete'],
@@ -55,6 +57,7 @@ const ROUTE_MODULE_MAP: Record<string, Module> = {
   '/dashboard':              'dashboard',
   '/dashboard/appointments': 'appointments',
   '/dashboard/waitlist':     'waitlist',
+  '/dashboard/patients':     'patients',
   '/dashboard/inventory':    'inventory',
   '/dashboard/integrations': 'integrations',
   '/dashboard/permissions':  'permissions',
@@ -100,8 +103,8 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
 
     const can = (action: Action, module: Module): boolean => {
       if (isFullAccess) return module !== 'admin' || role === 'super_admin';
-      if (role === 'doctor' && module === 'prescriptions') {
-        return MODULE_ACTIONS.prescriptions.includes(action);
+      if (role === 'doctor' && (module === 'prescriptions' || module === 'patients')) {
+        return MODULE_ACTIONS[module].includes(action);
       }
       if (!allowedPages.includes(module)) return false;
       // Randevu ekraninda yazma islemleri ayri bir izin anahtarina bagli.
@@ -131,7 +134,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     const allModules = Object.keys(MODULE_ACTIONS) as Module[];
     const allowedModules = isFullAccess
       ? allModules.filter((mod) => mod !== 'admin' || role === 'super_admin')
-      : allModules.filter((mod) => allowedPages.includes(mod) || (role === 'doctor' && mod === 'prescriptions'));
+      : allModules.filter((mod) => allowedPages.includes(mod) || (role === 'doctor' && (mod === 'prescriptions' || mod === 'patients')));
 
     return { role, can, canAccess, allowedModules };
   }, [role, allowedPages, loading]);

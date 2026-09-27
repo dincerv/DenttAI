@@ -22,6 +22,11 @@ class ExternalPatient(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     phone: str | None = Field(None, max_length=20)
     email: str | None = Field(None, max_length=255)
+    national_id: str | None = Field(None, max_length=11)
+    birth_date: str | None = Field(None, max_length=16)
+    insurance_type: str | None = Field(None, max_length=20)
+    insurance_provider: str | None = Field(None, max_length=100)
+    notes: str | None = Field(None, max_length=2000)
 
     @field_validator("phone", mode="before")
     @classmethod
@@ -39,6 +44,40 @@ class ExternalPatient(BaseModel):
             return None
         s = str(v).strip().lower()
         return s if s else None
+
+    @field_validator("national_id", mode="before")
+    @classmethod
+    def normalize_tc(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip().split(".")[0]
+        digits = "".join(ch for ch in s if ch.isdigit())
+        if not digits:
+            return None
+        if len(digits) != 11:
+            raise ValueError("TC 11 haneli olmali")
+        return digits
+
+    @field_validator("insurance_type", mode="before")
+    @classmethod
+    def normalize_insurance(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s:
+            return None
+        aliases = {
+            "sgk": "sgk",
+            "bagkur": "sgk",
+            "emekli": "sgk",
+            "ozel": "private",
+            "private": "private",
+            "karma": "mixed",
+            "mixed": "mixed",
+            "yok": "none",
+            "none": "none",
+        }
+        return aliases.get(s, "none")
 
 
 # ── Toplu İçe Aktarma İsteği (JSON) ───────────────────────

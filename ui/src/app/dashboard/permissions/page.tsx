@@ -26,6 +26,7 @@ const ALL_PAGES = [
   { key: 'appointments', label: 'Randevular',   icon: '📅' },
   { key: 'appointments_write', label: 'Randevu Değişiklikleri', icon: '✍️' },
   { key: 'waitlist',     label: 'Bekleme Listesi', icon: '⏳' },
+  { key: 'patients',     label: 'Hastalar',     icon: '👤' },
   { key: 'inventory',    label: 'Depo',         icon: '📦' },
   { key: 'integrations', label: 'Entegrasyonlar', icon: '🔌' },
   { key: 'payments',     label: 'Ödemeler',     icon: '💳' },

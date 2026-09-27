@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "DentAI Flow — PMS Sync",
+  "short_name": "DentAI Sync",
+  "version": "0.1.1",
+  "description": "Dentsoft / Dr.DENTES oturumunuzdan (salt okuma) hasta kayıtlarını DentAI Flow'a senkronize eder.",
+  "minimum_chrome_version": "111",
+  "permissions": ["storage", "alarms", "scripting"],
+  "host_permissions": [
+    "https://*.dentsoft.com.tr/*",
+    "https://drdentes.com/*",
+    "https://*.drdentes.com/*",
+    "https://denttai-production.up.railway.app/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.dentsoft.com.tr/*",
+        "https://drdentes.com/*",
+        "https://*.drdentes.com/*"
+      ],
+      "js": ["src/content/injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://*.dentsoft.com.tr/*",
+        "https://drdentes.com/*",
+        "https://*.drdentes.com/*"
+      ],
+      "js": ["src/content/content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_title": "DentAI PMS Sync",
+    "default_popup": "src/popup/popup.html"
+  }
+}

@@ -105,6 +105,8 @@ def require_permission(page: str):
         # Owner ve super_admin her zaman geçer
         if role in ("owner", "super_admin"):
             return current_user
+        if role == "doctor" and page in ("patients", "prescriptions"):
+            return current_user
 
         from app.models.user import User  # circular import önlemek için lazy
 

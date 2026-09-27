@@ -5,13 +5,15 @@ Multi-tenancy: her endpoint'te RLS context set edilir.
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.types import Date as SADate
 
 from app.core.database import get_db
 from app.models.appointment import AppointmentStatus
@@ -94,8 +96,12 @@ class PatientSummary(_BaseModel):
     id: str
     full_name: str
     phone: str | None = None
+    email: str | None = None
     insurance_type: str | None = None
+    insurance_provider: str | None = None
     national_id: str | None = None
+    birth_date: str | None = None
+    notes: str | None = None
 
 
 class PatientsListResponse(_BaseModel):
@@ -110,20 +116,33 @@ class PatientCreateRequest(_BaseModel):
     insurance_type: str | None = None
     insurance_provider: str | None = None
     insurance_number: str | None = None
+    birth_date: str | None = None
+    notes: str | None = None
 
 
 class PatientUpdateRequest(_BaseModel):
     full_name: str | None = None
     phone: str | None = None
+    email: str | None = None
+    national_id: str | None = None
+    insurance_type: str | None = None
+    insurance_provider: str | None = None
+    birth_date: str | None = None
+    notes: str | None = None
 
 
 def _patient_summary(row) -> PatientSummary:
+    birth = row.get("birth_date")
     return PatientSummary(
         id=str(row["id"]),
         full_name=row["full_name"],
         phone=row.get("phone"),
+        email=row.get("email"),
         insurance_type=row.get("insurance_type"),
+        insurance_provider=row.get("insurance_provider"),
         national_id=row.get("national_id"),
+        birth_date=birth.isoformat() if hasattr(birth, "isoformat") else (str(birth) if birth else None),
+        notes=row.get("notes"),
     )
 
 
@@ -146,6 +165,18 @@ def _normalize_tr_phone_to_e164(phone: str) -> str:
         raise HTTPException(status_code=400, detail="Telefon +90 ile gecerli formatta olmali")
 
     return f"+90{local}"
+
+
+def _parse_birth_date(value: str | None) -> date | None:
+    if not value or not str(value).strip():
+        return None
+    raw = str(value).strip()[:10]
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="Dogum tarihi YYYY-MM-DD olmali")
 
 @router.get(
     "/doctors",
@@ -189,7 +220,7 @@ async def list_doctors(
 )
 async def list_patients(
     q: str | None = Query(default=None, description="Hasta adı/telefon arama"),
-    limit: int = Query(default=30, ge=1, le=200),
+    limit: int = Query(default=200, ge=1, le=2000),
     claims: dict = Depends(get_verified_claims),
     db: AsyncSession = Depends(get_db),
 ) -> PatientsListResponse:
@@ -212,13 +243,15 @@ async def list_patients(
 
     if q_clean:
         query_text = """
-            SELECT p.id, p.full_name, p.phone, p.insurance_type, p.national_id
+            SELECT p.id, p.full_name, p.phone, p.email, p.insurance_type, p.insurance_provider,
+                   p.national_id, p.birth_date, p.notes
             FROM patients p
             WHERE p.clinic_id = :cid
               AND (
                     p.full_name ILIKE :pattern
                     OR translate(lower(COALESCE(p.full_name, '')), 'çğıöşü', 'cgiosu') ILIKE :pattern_fold
                     OR COALESCE(p.phone, '') ILIKE :pattern
+                    OR COALESCE(p.national_id, '') ILIKE :pattern
               )
             ORDER BY p.full_name
             LIMIT :limit
@@ -231,7 +264,8 @@ async def list_patients(
         }
     else:
         query_text = """
-            SELECT p.id, p.full_name, p.phone, p.insurance_type, p.national_id
+            SELECT p.id, p.full_name, p.phone, p.email, p.insurance_type, p.insurance_provider,
+                   p.national_id, p.birth_date, p.notes
             FROM patients p
             WHERE p.clinic_id = :cid
             ORDER BY p.full_name
@@ -253,7 +287,7 @@ async def list_patients(
     response_model=PatientSummary,
     status_code=status.HTTP_201_CREATED,
     summary="Manuel randevu icin yeni hasta olustur",
-    dependencies=[Depends(require_page_permission("appointments_write"))],
+    dependencies=[Depends(require_page_permission("patients"))],
 )
 async def create_patient(
     data: PatientCreateRequest,
@@ -279,15 +313,18 @@ async def create_patient(
                     """
                     INSERT INTO patients (
                         clinic_id, full_name, phone, email,
-                        national_id, insurance_type, insurance_provider, insurance_number
+                        national_id, insurance_type, insurance_provider, insurance_number,
+                        birth_date, notes
                     )
                     VALUES (
                         :cid, :full_name, :phone, :email,
-                        :national_id, :insurance_type, :insurance_provider, :insurance_number
+                        :national_id, :insurance_type, :insurance_provider, :insurance_number,
+                        :birth_date,
+                        :notes
                     )
-                    RETURNING id, full_name, phone, insurance_type, national_id, insurance_type, national_id
+                    RETURNING id, full_name, phone, email, insurance_type, insurance_provider, national_id, birth_date, notes
                     """
-                ),
+                ).bindparams(bindparam("birth_date", type_=SADate())),
                 {
                     "cid": str(claims["clinic_id"]),
                     "full_name": full_name,
@@ -297,6 +334,8 @@ async def create_patient(
                     "insurance_type": insurance_type,
                     "insurance_provider": data.insurance_provider,
                     "insurance_number": data.insurance_number,
+                    "birth_date": _parse_birth_date(data.birth_date),
+                    "notes": data.notes,
                 },
             )
         ).mappings().first()
@@ -307,7 +346,7 @@ async def create_patient(
             await db.execute(
                 text(
                     """
-                    SELECT id, full_name, phone, insurance_type, national_id
+                    SELECT id, full_name, phone, email, insurance_type, insurance_provider, national_id, birth_date, notes
                     FROM patients
                     WHERE clinic_id = :cid
                       AND LOWER(TRIM(full_name)) = LOWER(TRIM(:full_name))
@@ -331,8 +370,8 @@ async def create_patient(
 @router.patch(
     "/patients/{patient_id}",
     response_model=PatientSummary,
-    summary="Hasta bilgisi guncelle (ad/telefon)",
-    dependencies=[Depends(require_page_permission("appointments_write"))],
+    summary="Hasta bilgisi guncelle",
+    dependencies=[Depends(require_page_permission("patients"))],
 )
 async def update_patient(
     patient_id: UUID,
@@ -342,11 +381,19 @@ async def update_patient(
 ) -> PatientSummary:
     await set_rls_context(db, claims["clinic_id"])
 
-    if data.full_name is None and data.phone is None:
+    payload = data.model_dump(exclude_unset=True)
+    if not payload:
         raise HTTPException(status_code=400, detail="En az bir alan guncellenmeli")
 
     full_name = data.full_name.strip() if data.full_name is not None else None
-    phone = _normalize_tr_phone_to_e164(data.phone) if data.phone is not None else None
+    phone = None
+    if data.phone is not None:
+        raw = data.phone.strip()
+        phone = _normalize_tr_phone_to_e164(raw) if raw else None
+    national_id = (data.national_id or "").strip() or None if data.national_id is not None else None
+    insurance_type = data.insurance_type if data.insurance_type in ("none", "sgk", "private", "mixed") else None
+    clear_birth = "birth_date" in payload and not (data.birth_date or "").strip()
+    parsed_birth = _parse_birth_date(data.birth_date) if "birth_date" in payload else None
 
     row = (
         await db.execute(
@@ -355,14 +402,30 @@ async def update_patient(
                 UPDATE patients
                 SET
                     full_name = COALESCE(:full_name, full_name),
-                    phone = COALESCE(:phone, phone)
+                    phone = COALESCE(:phone, phone),
+                    email = COALESCE(:email, email),
+                    national_id = COALESCE(:national_id, national_id),
+                    insurance_type = COALESCE(:insurance_type, insurance_type),
+                    insurance_provider = COALESCE(:insurance_provider, insurance_provider),
+                    birth_date = CASE
+                        WHEN :clear_birth THEN NULL
+                        ELSE COALESCE(:birth_date, birth_date)
+                    END,
+                    notes = COALESCE(:notes, notes)
                 WHERE id = :pid AND clinic_id = :cid
-                RETURNING id, full_name, phone, insurance_type, national_id
+                RETURNING id, full_name, phone, email, insurance_type, insurance_provider, national_id, birth_date, notes
                 """
-            ),
+            ).bindparams(bindparam("birth_date", type_=SADate())),
             {
                 "full_name": full_name if full_name else None,
                 "phone": phone,
+                "email": data.email.strip() if data.email else None,
+                "national_id": national_id,
+                "insurance_type": insurance_type,
+                "insurance_provider": data.insurance_provider,
+                "clear_birth": clear_birth,
+                "birth_date": parsed_birth,
+                "notes": data.notes,
                 "pid": str(patient_id),
                 "cid": str(claims["clinic_id"]),
             },
@@ -373,6 +436,35 @@ async def update_patient(
         raise HTTPException(status_code=404, detail="Hasta bulunamadi")
 
     await db.commit()
+    return _patient_summary(row)
+
+
+@router.get(
+    "/patients/{patient_id}",
+    response_model=PatientSummary,
+    summary="Hasta kartı",
+)
+async def get_patient(
+    patient_id: UUID,
+    claims: dict = Depends(get_verified_claims),
+    db: AsyncSession = Depends(get_db),
+) -> PatientSummary:
+    await set_rls_context(db, claims["clinic_id"])
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, full_name, phone, email, insurance_type, insurance_provider,
+                       national_id, birth_date, notes
+                FROM patients
+                WHERE id = :pid AND clinic_id = :cid
+                """
+            ),
+            {"pid": str(patient_id), "cid": str(claims["clinic_id"])},
+        )
+    ).mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Hasta bulunamadi")
     return _patient_summary(row)
 
 

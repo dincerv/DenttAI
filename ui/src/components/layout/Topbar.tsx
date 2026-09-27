@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 const BASE_TITLES: Record<string, string> = {
   '/dashboard/appointments':  'Randevular',
   '/dashboard/waitlist':      'Yedek Liste',
+  '/dashboard/patients':      'Hastalar',
   '/dashboard/inventory':     'Envanter',
   '/dashboard/payments':      'Ödemeler',
   '/dashboard/invoices':      'Faturalar',
@@ -33,7 +34,9 @@ export function Topbar({ onMenuToggle }: TopbarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
   const role  = user?.role ?? 'owner';
-  const title = BASE_TITLES[pathname] ?? (
+  const title = pathname.startsWith('/dashboard/patients/')
+    ? 'Hasta kartı'
+    : BASE_TITLES[pathname] ?? (
     pathname === '/dashboard' ? (DASHBOARD_TITLE_BY_ROLE[role] ?? 'Dashboard') : 'DentAI Flow'
   );
   const today = format(new Date(), "d MMMM yyyy, EEEE", { locale: tr });

@@ -119,7 +119,7 @@ def _doctor_mappings(config: dict | None) -> dict[str, str | None]:
 )
 async def import_patients_from_json(
     body: PatientImportRequest,
-    claims: dict = Depends(require_role("owner", "assistant")),
+    claims: dict = Depends(require_role("owner", "doctor", "assistant")),
     db: AsyncSession = Depends(get_db),
 ) -> ImportResult:
     await set_rls_context(db, claims["clinic_id"])
@@ -133,13 +133,14 @@ async def import_patients_from_json(
     summary="Hasta listesini Excel/CSV dosyası olarak içe aktar",
     description=(
         "xlsx, xls veya csv dosyasını multipart/form-data ile yükleyin. "
-        "Zorunlu sütun: full_name. Opsiyonel: phone, email. "
+        "Zorunlu sütun: full_name (veya ad_soyad). "
+        "Opsiyonel: phone, email, national_id/tc, birth_date, insurance_type, notes. "
         "Duplicate kayıtlar atlanır."
     ),
 )
 async def import_patients_from_excel(
     file: UploadFile = File(..., description="xlsx / xls / csv dosyası"),
-    claims: dict = Depends(require_role("owner", "assistant")),
+    claims: dict = Depends(require_role("owner", "doctor", "assistant")),
     db: AsyncSession = Depends(get_db),
 ) -> ImportResult:
     await set_rls_context(db, claims["clinic_id"])

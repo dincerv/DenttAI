@@ -12,6 +12,7 @@ from app.models.patient import Patient, InsuranceType
 from app.models.payment import Payment, PaymentTransaction, PaymentStatus, PaymentMethod, PayerType
 from app.models.invoice import Invoice, InvoiceItem, InvoiceType, InvoiceStatus, GibStatus
 from app.models.prescription import Prescription, PrescriptionItem, PrescriptionStatus, MedulaStatus
+from app.models.dental import ToothRecord, Treatment, ToothStatus, ProcedureType, TreatmentStatus
 
 # ── Yedek Liste ───────────────────────────────────────────
 from app.models.waitlist import Waitlist
@@ -60,6 +61,11 @@ __all__ = [
     "PrescriptionItem",
     "PrescriptionStatus",
     "MedulaStatus",
+    "ToothRecord",
+    "Treatment",
+    "ToothStatus",
+    "ProcedureType",
+    "TreatmentStatus",
     # Waitlist
     "Waitlist",
     # Inventory

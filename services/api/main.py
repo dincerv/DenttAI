@@ -34,6 +34,7 @@ from app.routers.whatsapp_ingest import router as whatsapp_ingest_router
 from app.routers.payments import router as payments_router
 from app.routers.invoices import router as invoices_router
 from app.routers.prescriptions import router as prescriptions_router
+from app.routers.dental import router as dental_router
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
@@ -87,6 +88,7 @@ app.include_router(whatsapp_ingest_router, prefix="/api")        # /api/whatsapp
 app.include_router(payments_router,        prefix="/api")        # /api/payments/*
 app.include_router(invoices_router,        prefix="/api")        # /api/invoices/*
 app.include_router(prescriptions_router,   prefix="/api")        # /api/prescriptions/*
+app.include_router(dental_router,          prefix="/api")        # /api/dental/*
 
 
 # ── Lifecycle ─────────────────────────────────────────────

@@ -64,9 +64,10 @@ Canlı: UI `https://dentai-ui-production.up.railway.app` · API `https://denttai
 - Neon + yerel DB yedek scripti
 
 ### Sıradaki ürün işi
-1. **GİB e-Fatura / e-Arşiv / e-SMM** — şu an klinik kaydı; resmi gönderim yok
-2. **Medula e-reçete** — taslak/kesim var; SGK gönderimi yok
-3. **WhatsApp / SMS resmi hat** — webhook ve hatırlatma kodu var; canlı Meta/SMS son adım
+1. **Hastalar sayfası + Excel + diş şeması / tedavi planı** — eklendi (FDI odontogram, plan→yapıldı→borç)
+2. **GİB e-Fatura / e-Arşiv / e-SMM** — klinik kaydı var; resmi gönderim yok
+3. **Medula e-reçete** — taslak/kesim var; SGK gönderimi yok
+4. **WhatsApp / SMS resmi hat** — en son
 
 ### İkincil borç
 - CSRF + rate limit production'da kapalı

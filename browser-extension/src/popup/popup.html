@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DentAI PMS Sync</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>DentAI Sync</h1>
+      <p class="sub">Dentsoft / Dr.DENTES → DentAI (salt okuma)</p>
+    </header>
+
+    <section id="login-panel" class="panel hidden">
+      <label>
+        API
+        <select id="api-base">
+          <option value="https://denttai-production.up.railway.app">Canlı</option>
+          <option value="http://localhost:8000">Yerel</option>
+        </select>
+      </label>
+      <label>
+        E-posta
+        <input id="email" type="email" autocomplete="username" />
+      </label>
+      <label>
+        Şifre
+        <input id="password" type="password" autocomplete="current-password" />
+      </label>
+      <label>
+        Klinik kodu <span class="muted">(opsiyonel)</span>
+        <input id="clinic-code" type="text" autocomplete="off" />
+      </label>
+      <button id="login-btn" type="button" class="primary">DentAI’ye bağlan</button>
+      <p id="login-error" class="error" hidden></p>
+    </section>
+
+    <section id="session-panel" class="panel hidden">
+      <div class="row">
+        <div>
+          <div class="label">Oturum</div>
+          <div id="session-email" class="value">—</div>
+          <div id="session-meta" class="muted"></div>
+        </div>
+        <button id="logout-btn" type="button" class="ghost">Çıkış</button>
+      </div>
+
+      <div class="actions">
+        <button id="sync-btn" type="button" class="primary">Şimdi senkronize et</button>
+      </div>
+      <p id="sync-msg" class="muted" hidden></p>
+
+      <div class="label mt">Sağlayıcılar</div>
+      <ul id="provider-list"></ul>
+      <p id="next-run" class="muted"></p>
+    </section>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

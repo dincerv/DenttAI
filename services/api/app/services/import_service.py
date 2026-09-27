@@ -15,17 +15,91 @@ from __future__ import annotations
 
 import io
 import logging
+from datetime import datetime
 from uuid import UUID
 
 import pandas as pd
 from fastapi import HTTPException, status
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.schemas.integration import ExternalPatient, ImportResult, PatientImportRequest
 
 logger = logging.getLogger(__name__)
+
+_COL_ALIASES = {
+    "full_name": "full_name",
+    "ad_soyad": "full_name",
+    "adsoyad": "full_name",
+    "hasta_adi": "full_name",
+    "hasta": "full_name",
+    "isim": "full_name",
+    "ad": "full_name",
+    "phone": "phone",
+    "telefon": "phone",
+    "tel": "phone",
+    "cep": "phone",
+    "email": "email",
+    "e_posta": "email",
+    "eposta": "email",
+    "national_id": "national_id",
+    "tc": "national_id",
+    "tckn": "national_id",
+    "tc_kimlik": "national_id",
+    "tc_kimlik_no": "national_id",
+    "kimlik": "national_id",
+    "birth_date": "birth_date",
+    "dogum": "birth_date",
+    "dogum_tarihi": "birth_date",
+    "insurance_type": "insurance_type",
+    "sigorta": "insurance_type",
+    "sigorta_tipi": "insurance_type",
+    "insurance_provider": "insurance_provider",
+    "sigorta_kurumu": "insurance_provider",
+    "notes": "notes",
+    "not": "notes",
+    "notlar": "notes",
+}
+
+
+def _normalize_col(name: object) -> str:
+    raw = str(name or "").strip().lower().replace(" ", "_")
+    return _COL_ALIASES.get(raw, raw)
+
+
+def _parse_date(value: str | None):
+    if not value:
+        return None
+    raw = value.strip()[:10]
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _cell(row, key: str) -> str | None:
+    val = row.get(key)
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    text = str(val).strip()
+    return text or None
+
+
+def _normalize_phone(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if digits.startswith("90") and len(digits) == 12:
+        return f"+{digits}"
+    if digits.startswith("0") and len(digits) == 11:
+        return f"+90{digits[1:]}"
+    if len(digits) == 10:
+        return f"+90{digits}"
+    return phone.strip() or None
 
 
 def _patient_key(full_name: str, phone: str | None) -> str:
@@ -46,6 +120,19 @@ async def _load_existing_keys(db: AsyncSession, clinic_id: UUID) -> set[str]:
         {"cid": str(clinic_id)},
     )
     return {row[0] for row in result.fetchall()}
+
+
+async def _load_existing_tcs(db: AsyncSession, clinic_id: UUID) -> set[str]:
+    result = await db.execute(
+        text(
+            """
+            SELECT national_id FROM patients
+            WHERE clinic_id = :cid AND national_id IS NOT NULL
+            """
+        ),
+        {"cid": str(clinic_id)},
+    )
+    return {row[0] for row in result.fetchall() if row[0]}
 
 
 async def import_patients_json(
@@ -78,12 +165,12 @@ async def import_patients_excel(
         ) from exc
 
     # Sütun adlarını normalize et
-    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    df.columns = [_normalize_col(c) for c in df.columns]
 
     if "full_name" not in df.columns:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Dosyada 'full_name' sütunu bulunamadı",
+            detail="Dosyada 'full_name' veya 'ad_soyad' sutunu bulunamadi",
         )
 
     patients: list[ExternalPatient] = []
@@ -93,14 +180,19 @@ async def import_patients_excel(
     for idx, row in df.iterrows():
         try:
             p = ExternalPatient(
-                full_name=str(row.get("full_name", "")).strip(),
-                phone=row.get("phone") if pd.notna(row.get("phone")) else None,
-                email=row.get("email") if pd.notna(row.get("email")) else None,
+                full_name=_cell(row, "full_name") or "",
+                phone=_cell(row, "phone"),
+                email=_cell(row, "email"),
+                national_id=_cell(row, "national_id"),
+                birth_date=_cell(row, "birth_date"),
+                insurance_type=_cell(row, "insurance_type"),
+                insurance_provider=_cell(row, "insurance_provider"),
+                notes=_cell(row, "notes"),
             )
             patients.append(p)
         except Exception as e:
             skipped_invalid += 1
-            errors.append(f"Satır {int(idx) + 2}: {e}")  # +2: header + 1-indexed
+            errors.append(f"Satir {int(idx) + 2}: {e}")
 
     result = await _run_import(patients, clinic_id, db)
     result.skipped_invalid += skipped_invalid
@@ -114,39 +206,58 @@ async def _run_import(
     db: AsyncSession,
 ) -> ImportResult:
     existing_keys = await _load_existing_keys(db, clinic_id)
+    existing_tcs = await _load_existing_tcs(db, clinic_id)
 
     to_insert: list[dict] = []
     skipped_duplicates = 0
 
     for p in patients:
-        key = _patient_key(p.full_name, p.phone)
+        phone = _normalize_phone(p.phone)
+        key = _patient_key(p.full_name, phone)
         if key in existing_keys:
             skipped_duplicates += 1
             continue
         # Bellek içi set'e ekle — aynı import içindeki tekrarları da engeller
+        if p.national_id and p.national_id in existing_tcs:
+            skipped_duplicates += 1
+            continue
         existing_keys.add(key)
+        if p.national_id:
+            existing_tcs.add(p.national_id)
         to_insert.append({
             "clinic_id": str(clinic_id),
             "full_name": p.full_name.strip(),
-            "phone":     p.phone,
-            "email":     p.email,
+            "phone": phone,
+            "email": p.email,
+            "national_id": p.national_id,
+            "birth_date": _parse_date(p.birth_date),
+            "insurance_type": p.insurance_type or "none",
+            "insurance_provider": p.insurance_provider,
+            "notes": p.notes,
         })
 
     inserted = 0
     batch_size = settings.IMPORT_BATCH_SIZE
     # executemany ile rowcount güvenilir değil; her satır ayrı execute edilir.
-    # ON CONFLICT DO NOTHING durumunda rowcount=0 döner → gerçek inserted sayısı.
     insert_sql = text("""
-        INSERT INTO patients (id, clinic_id, full_name, phone, email)
-        VALUES (gen_random_uuid(), CAST(:clinic_id AS UUID), :full_name, :phone, :email)
-        ON CONFLICT (clinic_id, LOWER(TRIM(full_name)), COALESCE(phone, ''))
-        DO NOTHING
+        INSERT INTO patients (
+            id, clinic_id, full_name, phone, email,
+            national_id, birth_date, insurance_type, insurance_provider, notes
+        )
+        VALUES (
+            gen_random_uuid(), CAST(:clinic_id AS UUID), :full_name, :phone, :email,
+            :national_id, :birth_date, COALESCE(:insurance_type, 'none'), :insurance_provider, :notes
+        )
     """)
     for i in range(0, len(to_insert), batch_size):
         batch = to_insert[i: i + batch_size]
         for row in batch:
-            result = await db.execute(insert_sql, row)
-            inserted += result.rowcount
+            try:
+                async with db.begin_nested():
+                    result = await db.execute(insert_sql, row)
+                    inserted += result.rowcount or 1
+            except IntegrityError:
+                skipped_duplicates += 1
         await db.flush()  # Her batch sonunda DB'ye yaz, belleği boşalt
 
     await db.commit()

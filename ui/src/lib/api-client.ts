@@ -37,6 +37,9 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
 
   const method = (config.method || '').toLowerCase();
   const hasRequestBody = config.data !== undefined && config.data !== null;
@@ -146,10 +149,19 @@ export const appointmentApi = {
   cancel:  (id: string) => apiClient.patch(`/appointments/${id}`, { status: 'cancelled' }),
   doctors: () => apiClient.get('/appointments/doctors'),
   patients: (params?: { q?: string; limit?: number }) => apiClient.get('/appointments/patients', { params }),
-  createPatient: (data: { full_name: string; phone: string; email?: string }) =>
-    apiClient.post('/appointments/patients', data),
-  updatePatient: (id: string, data: { full_name?: string; phone?: string }) =>
+  createPatient: (data: {
+    full_name: string;
+    phone: string;
+    email?: string;
+    national_id?: string;
+    insurance_type?: string;
+    insurance_provider?: string;
+    birth_date?: string;
+    notes?: string;
+  }) => apiClient.post('/appointments/patients', data),
+  updatePatient: (id: string, data: Record<string, string | null | undefined>) =>
     apiClient.patch(`/appointments/patients/${id}`, data),
+  getPatient: (id: string) => apiClient.get(`/appointments/patients/${id}`),
 };
 
 export const waitlistApi = {
@@ -338,10 +350,31 @@ export const integrationApi = {
   triggerPostOpReachout: (appointmentId: string) =>
     apiClient.post(`/integration/appointments/${appointmentId}/post-op-reachout`),
   testConnection:  () => apiClient.post('/integration/test-connection'),
+  importPatientsExcel: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiClient.post('/integration/import/patients/excel', form, { timeout: 60_000 });
+  },
   getClinicWhatsappSettings: () =>
     apiClient.get('/integration/whatsapp/clinic-settings'),
   updateClinicWhatsappSettings: (data: Record<string, unknown>) =>
     apiClient.put('/integration/whatsapp/clinic-settings', data),
+};
+
+export const dentalApi = {
+  chart: (patientId: string) => apiClient.get(`/dental/patients/${patientId}/chart`),
+  setTooth: (patientId: string, tooth: number, data: { status: string; notes?: string | null }) =>
+    apiClient.put(`/dental/patients/${patientId}/teeth/${tooth}`, data),
+  treatments: (patientId: string) => apiClient.get(`/dental/patients/${patientId}/treatments`),
+  addTreatment: (patientId: string, data: {
+    tooth_fdi?: number | null;
+    procedure: string;
+    price?: number;
+    notes?: string;
+  }) => apiClient.post(`/dental/patients/${patientId}/treatments`, data),
+  completeTreatment: (id: string, createCharge = true) =>
+    apiClient.post(`/dental/treatments/${id}/complete`, { create_charge: createCharge }),
+  cancelTreatment: (id: string) => apiClient.post(`/dental/treatments/${id}/cancel`, {}),
 };
 
 

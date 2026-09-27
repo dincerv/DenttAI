@@ -22,9 +22,9 @@ router = APIRouter(prefix="/auth/users", tags=["Kullanıcı Yönetimi"])
 # Her kullanıcının hangi sayfalara erişebileceği kullanıcının rolüne göre
 # otomatik üretilir; owner tüm sayfalara, assistant daha kısıtlı.
 ROLE_DEFAULT_PAGES: dict[str, list[str]] = {
-    "owner":        ["dashboard", "appointments", "appointments_write", "waitlist", "inventory", "integrations", "permissions", "payments", "invoices", "prescriptions"],
-    "doctor":       ["dashboard", "appointments", "appointments_write", "waitlist", "prescriptions"],
-    "assistant":    ["appointments", "waitlist", "inventory"],
+    "owner":        ["dashboard", "appointments", "appointments_write", "waitlist", "patients", "inventory", "integrations", "permissions", "payments", "invoices", "prescriptions"],
+    "doctor":       ["dashboard", "appointments", "appointments_write", "waitlist", "patients", "prescriptions"],
+    "assistant":    ["appointments", "waitlist", "patients", "inventory"],
 }
 
 
@@ -295,7 +295,10 @@ async def change_user_password(
 # ── Allowed Pages (per-user permissions) ──────────────────
 
 # Geçerli sayfa isimleri — bilinmeyen değer kabul edilmez
-VALID_PAGES = {"dashboard", "appointments", "appointments_write", "waitlist", "inventory", "integrations", "permissions"}
+VALID_PAGES = {
+    "dashboard", "appointments", "appointments_write", "waitlist", "patients",
+    "inventory", "integrations", "permissions", "payments", "invoices", "prescriptions",
+}
 
 
 class UpdatePermissionsRequest(BaseModel):
