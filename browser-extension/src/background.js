@@ -220,6 +220,29 @@ async function runPeriodic(provider) {
   }
 }
 
+async function syncPatientsOnly(trigger) {
+  if (!(await isAuthenticated())) return;
+  for (const provider of Object.values(PROVIDERS)) {
+    if (provider.calendar) {
+      const key = statusKey(provider.id);
+      const { [key]: cur = {} } = await chrome.storage.local.get(key);
+      // Eski 502'yi girişte temizle; takvimi şimdi çalıştırma.
+      if (cur.calendar?.lastError) {
+        await updateStatus(provider.id, {
+          calendar: { ...cur.calendar, lastError: null },
+        });
+      }
+    }
+    try {
+      await runPeriodic(provider);
+    } catch (error) {
+      await updateStatus(provider.id, { lastPeriodicError: String(error?.message || error) });
+    }
+    await flushQueue(provider.id);
+  }
+  console.info(`[dentai-sync] ${trigger} (sadece hastalar) tamamlandı`);
+}
+
 async function syncAll(trigger) {
   if (!(await isAuthenticated())) return;
   for (const provider of Object.values(PROVIDERS)) {
@@ -298,7 +321,9 @@ async function handlePopupMessage(message) {
   switch (message.type) {
     case 'LOGIN': {
       const session = await login(message.payload);
-      syncAll('login');
+      // Girişte sadece hasta sync — takvim 502 üretip popup'ı kirletmesin.
+      // Takvim: "Şimdi senkronize et" veya 15 dk alarm.
+      syncPatientsOnly('login');
       return { ok: true, session };
     }
     case 'LOGOUT':
