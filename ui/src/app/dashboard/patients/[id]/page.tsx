@@ -20,6 +20,20 @@ const INSURANCE: Record<string, string> = {
   none: 'Yok', sgk: 'SGK', private: 'Özel', mixed: 'Karma',
 };
 
+const SEX_LABEL: Record<string, string> = {
+  female: 'Kadın', male: 'Erkek', other: 'Diğer', unknown: 'Bilinmiyor',
+};
+
+function ProfileField({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-sm text-slate-800 mt-0.5 break-words">{value}</p>
+    </div>
+  );
+}
+
 export default function PatientChartPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -69,6 +83,10 @@ export default function PatientChartPage() {
     return <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>;
   }
 
+  const location = [patient.address, patient.district, patient.city, patient.country]
+    .filter(Boolean)
+    .join(', ');
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -80,6 +98,7 @@ export default function PatientChartPage() {
           <p className="text-xs text-slate-500">
             {patient.phone ?? 'Telefon yok'}
             {patient.national_id ? ` · ${patient.national_id}` : ' · TC yok'}
+            {patient.file_number ? ` · Dosya #${patient.file_number}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -90,6 +109,31 @@ export default function PatientChartPage() {
             <Pencil className="h-3.5 w-3.5" /> Kart
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Profil</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <ProfileField label="E-posta" value={patient.email} />
+          <ProfileField label="Doğum" value={patient.birth_date} />
+          <ProfileField label="Cinsiyet" value={patient.sex ? SEX_LABEL[patient.sex] ?? patient.sex : null} />
+          <ProfileField label="Kan grubu" value={patient.blood_type} />
+          <ProfileField label="Meslek" value={patient.occupation} />
+          <ProfileField label="Uyruk" value={patient.nationality} />
+          <ProfileField label="Dosya no" value={patient.file_number} />
+          <ProfileField label="Arşiv no" value={patient.archive_number} />
+          <ProfileField label="Sigorta kurumu" value={patient.insurance_provider} />
+          <ProfileField label="Harici ID" value={patient.external_id} />
+          <ProfileField label="Adres" value={location || null} />
+        </div>
+        {patient.notes ? (
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Klinik özet (Dentsoft)</p>
+            <pre className="whitespace-pre-wrap text-xs text-slate-700 font-sans leading-relaxed max-h-64 overflow-y-auto">
+              {patient.notes}
+            </pre>
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">

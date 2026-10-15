@@ -35,8 +35,8 @@ export default function PatientsPage() {
     setUploading(true);
     try {
       const res = await integrationApi.importPatientsExcel(file);
-      const data = res.data as { inserted: number; skipped_duplicates: number; skipped_invalid: number; errors?: string[] };
-      toast.success(`Eklenen ${data.inserted} · tekrar ${data.skipped_duplicates} · hatalı ${data.skipped_invalid}`);
+      const data = res.data as { inserted: number; updated?: number; skipped_duplicates: number; skipped_invalid: number; errors?: string[] };
+      toast.success(`Eklenen ${data.inserted} · güncellenen ${data.updated ?? 0} · tekrar ${data.skipped_duplicates} · hatalı ${data.skipped_invalid}`);
       if (data.errors?.length) toast.message(data.errors.slice(0, 3).join('\n'));
       await refresh();
     } catch (err: unknown) {
@@ -103,7 +103,7 @@ export default function PatientsPage() {
       </div>
 
       <p className="text-xs text-slate-500">
-        Excel sütunları: ad_soyad veya full_name (zorunlu), telefon, tc, dogum_tarihi, sigorta, email, notlar.
+        Excel sütunları: ad_soyad veya full_name (zorunlu), telefon, tc, dogum_tarihi, sigorta, email, adres, il, ilce, meslek, kan_grubu, dosya_no.
         Personel (hekim/asistan) Yetkiler sayfasından eklenir.
       </p>
 
@@ -119,27 +119,40 @@ export default function PatientsPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {patients.map((p) => (
-            <Link
-              key={p.id}
-              href={`/dashboard/patients/${p.id}`}
-              className="block w-full text-left rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm hover:border-brand-300"
-            >
-              <div className="flex flex-wrap items-center gap-2 justify-between">
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-800 truncate">{p.full_name}</p>
-                  <p className="text-xs text-slate-500 truncate">
-                    {p.phone ?? 'Telefon yok'}
-                    {p.national_id ? ` · ${p.national_id}` : ' · TC yok'}
-                    {p.email ? ` · ${p.email}` : ''}
-                  </p>
+          {patients.map((p) => {
+            const loc = [p.district, p.city].filter(Boolean).join(', ');
+            return (
+              <Link
+                key={p.id}
+                href={`/dashboard/patients/${p.id}`}
+                className="block w-full text-left rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm hover:border-brand-300"
+              >
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-800 truncate">
+                      {p.full_name}
+                      {p.file_number ? (
+                        <span className="ml-2 text-xs font-normal text-slate-400">#{p.file_number}</span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {p.phone ?? 'Telefon yok'}
+                      {p.national_id ? ` · ${p.national_id}` : ' · TC yok'}
+                      {p.sex === 'female' ? ' · Kadın' : p.sex === 'male' ? ' · Erkek' : ''}
+                      {p.birth_date ? ` · ${p.birth_date}` : ''}
+                      {loc ? ` · ${loc}` : ''}
+                      {p.occupation ? ` · ${p.occupation}` : ''}
+                      {p.blood_type ? ` · ${p.blood_type}` : ''}
+                      {p.email ? ` · ${p.email}` : ''}
+                    </p>
+                  </div>
+                  <Badge variant={p.insurance_type === 'sgk' ? 'blue' : p.national_id ? 'green' : 'orange'}>
+                    {INSURANCE_LABEL[p.insurance_type ?? 'none'] ?? 'Yok'}
+                  </Badge>
                 </div>
-                <Badge variant={p.insurance_type === 'sgk' ? 'blue' : p.national_id ? 'green' : 'orange'}>
-                  {INSURANCE_LABEL[p.insurance_type ?? 'none'] ?? 'Yok'}
-                </Badge>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
 

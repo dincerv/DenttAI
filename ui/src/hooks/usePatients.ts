@@ -11,6 +11,18 @@ export interface ClinicPatient {
   national_id: string | null;
   birth_date: string | null;
   notes: string | null;
+  sex?: string | null;
+  address?: string | null;
+  city?: string | null;
+  district?: string | null;
+  country?: string | null;
+  external_id?: string | null;
+  avatar_url?: string | null;
+  file_number?: string | null;
+  archive_number?: string | null;
+  occupation?: string | null;
+  nationality?: string | null;
+  blood_type?: string | null;
 }
 
 export function usePatients(query: string) {

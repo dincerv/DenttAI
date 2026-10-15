@@ -12,6 +12,14 @@ const INSURANCE = [
   { value: 'mixed', label: 'Karma' },
 ];
 
+const SEX = [
+  { value: '', label: '—' },
+  { value: 'female', label: 'Kadın' },
+  { value: 'male', label: 'Erkek' },
+  { value: 'other', label: 'Diğer' },
+  { value: 'unknown', label: 'Bilinmiyor' },
+];
+
 export function PatientFormModal({
   patient,
   onClose,
@@ -27,8 +35,18 @@ export function PatientFormModal({
   const [email, setEmail] = useState(patient?.email ?? '');
   const [nationalId, setNationalId] = useState(patient?.national_id ?? '');
   const [birthDate, setBirthDate] = useState(patient?.birth_date ?? '');
+  const [sex, setSex] = useState(patient?.sex ?? '');
   const [insuranceType, setInsuranceType] = useState(patient?.insurance_type ?? 'none');
   const [insuranceProvider, setInsuranceProvider] = useState(patient?.insurance_provider ?? '');
+  const [address, setAddress] = useState(patient?.address ?? '');
+  const [city, setCity] = useState(patient?.city ?? '');
+  const [district, setDistrict] = useState(patient?.district ?? '');
+  const [country, setCountry] = useState(patient?.country ?? '');
+  const [fileNumber, setFileNumber] = useState(patient?.file_number ?? '');
+  const [archiveNumber, setArchiveNumber] = useState(patient?.archive_number ?? '');
+  const [occupation, setOccupation] = useState(patient?.occupation ?? '');
+  const [nationality, setNationality] = useState(patient?.nationality ?? '');
+  const [bloodType, setBloodType] = useState(patient?.blood_type ?? '');
   const [notes, setNotes] = useState(patient?.notes ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -43,24 +61,25 @@ export function PatientFormModal({
       email: email.trim() || undefined,
       national_id: nationalId.trim() || undefined,
       birth_date: birthDate || undefined,
+      sex: sex || undefined,
       insurance_type: insuranceType,
       insurance_provider: insuranceProvider.trim() || undefined,
+      address: address.trim() || undefined,
+      city: city.trim() || undefined,
+      district: district.trim() || undefined,
+      country: country.trim() || undefined,
+      file_number: fileNumber.trim() || undefined,
+      archive_number: archiveNumber.trim() || undefined,
+      occupation: occupation.trim() || undefined,
+      nationality: nationality.trim() || undefined,
+      blood_type: bloodType.trim() || undefined,
       notes: notes.trim() || undefined,
     };
     try {
       if (isEdit && patient) {
         await appointmentApi.updatePatient(patient.id, body);
       } else {
-        await appointmentApi.createPatient({
-          full_name: body.full_name,
-          phone: body.phone,
-          email: body.email,
-          national_id: body.national_id,
-          insurance_type: body.insurance_type,
-          insurance_provider: body.insurance_provider,
-          birth_date: body.birth_date,
-          notes: body.notes,
-        });
+        await appointmentApi.createPatient(body);
       }
       onSaved();
       onClose();
@@ -93,10 +112,16 @@ export function PatientFormModal({
             <input value={nationalId} onChange={(e) => setNationalId(e.target.value)} maxLength={11} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           </label>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label className="block text-xs font-medium text-slate-600">
             Doğum tarihi
             <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Cinsiyet
+            <select value={sex} onChange={(e) => setSex(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              {SEX.map((o) => <option key={o.value || 'empty'} value={o.value}>{o.label}</option>)}
+            </select>
           </label>
           <label className="block text-xs font-medium text-slate-600">
             Sigorta
@@ -113,6 +138,48 @@ export function PatientFormModal({
           Sigorta kurumu
           <input value={insuranceProvider} onChange={(e) => setInsuranceProvider(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
         </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="block text-xs font-medium text-slate-600">
+            Dosya no
+            <input value={fileNumber} onChange={(e) => setFileNumber(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Arşiv no
+            <input value={archiveNumber} onChange={(e) => setArchiveNumber(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label className="block text-xs font-medium text-slate-600">
+            Meslek
+            <input value={occupation} onChange={(e) => setOccupation(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Uyruk
+            <input value={nationality} onChange={(e) => setNationality(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Kan grubu
+            <input value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="A+" />
+          </label>
+        </div>
+        <label className="block text-xs font-medium text-slate-600">
+          Adres
+          <input value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label className="block text-xs font-medium text-slate-600">
+            İl
+            <input value={city} onChange={(e) => setCity(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            İlçe
+            <input value={district} onChange={(e) => setDistrict(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Ülke
+            <input value={country} onChange={(e) => setCountry(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+        </div>
         <label className="block text-xs font-medium text-slate-600">
           Not
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
