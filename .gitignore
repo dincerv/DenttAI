@@ -35,3 +35,5 @@ logs/
 
 # DB dumps — asla commit etme (şifreli hasta verisi içerir)
 backups/
+
+HESAPLAR.txt
