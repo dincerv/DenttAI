@@ -14,6 +14,40 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # ── Hasta Satırı (harici format) ───────────────────────────
 
+class ExternalClinicalVisit(BaseModel):
+    """Dentsoft randevu/tedavi satırı → DentAI tedavi + not."""
+    external_ref: str | None = Field(None, max_length=64)
+    when_text: str | None = Field(None, max_length=120)
+    doctor: str | None = Field(None, max_length=120)
+    tooth_hint: str | None = Field(None, max_length=20)
+    procedure_raw: str | None = Field(None, max_length=120)
+    procedure: str | None = Field(None, max_length=30)
+    status: str | None = Field(None, max_length=20)
+    note: str | None = Field(None, max_length=500)
+
+    @field_validator("procedure", mode="before")
+    @classmethod
+    def normalize_procedure(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        allowed = {
+            "muayene", "dolgu", "kanal", "cekim", "kron", "kopru",
+            "implant", "protez", "veneer", "ortodonti", "temizlik", "diger",
+        }
+        return s if s in allowed else "diger"
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if s in ("planned", "completed", "cancelled"):
+            return s
+        return "completed"
+
+
 class ExternalPatient(BaseModel):
     """
     Harici sistemden gelen tek hasta satırı.
@@ -27,6 +61,19 @@ class ExternalPatient(BaseModel):
     insurance_type: str | None = Field(None, max_length=20)
     insurance_provider: str | None = Field(None, max_length=100)
     notes: str | None = Field(None, max_length=2000)
+    sex: str | None = Field(None, max_length=20)
+    address: str | None = Field(None, max_length=500)
+    city: str | None = Field(None, max_length=100)
+    district: str | None = Field(None, max_length=100)
+    country: str | None = Field(None, max_length=100)
+    external_id: str | None = Field(None, max_length=128)
+    avatar_url: str | None = Field(None, max_length=500)
+    file_number: str | None = Field(None, max_length=64)
+    archive_number: str | None = Field(None, max_length=64)
+    occupation: str | None = Field(None, max_length=100)
+    nationality: str | None = Field(None, max_length=100)
+    blood_type: str | None = Field(None, max_length=20)
+    clinical_visits: list[ExternalClinicalVisit] = Field(default_factory=list, max_length=50)
 
     @field_validator("phone", mode="before")
     @classmethod
@@ -79,6 +126,43 @@ class ExternalPatient(BaseModel):
         }
         return aliases.get(s, "none")
 
+    @field_validator("sex", mode="before")
+    @classmethod
+    def normalize_sex(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s:
+            return None
+        aliases = {
+            "1": "female",
+            "f": "female",
+            "female": "female",
+            "kadin": "female",
+            "kadın": "female",
+            "k": "female",
+            "0": "male",
+            "2": "male",
+            "m": "male",
+            "male": "male",
+            "erkek": "male",
+            "e": "male",
+            "other": "other",
+            "diger": "other",
+            "diğer": "other",
+            "unknown": "unknown",
+            "bilinmiyor": "unknown",
+        }
+        return aliases.get(s, "unknown")
+
+    @field_validator("address", "city", "district", "country", "external_id", "avatar_url", "file_number", "archive_number", "occupation", "nationality", "blood_type", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
 
 # ── Toplu İçe Aktarma İsteği (JSON) ───────────────────────
 
@@ -91,6 +175,7 @@ class PatientImportRequest(BaseModel):
 class ImportResult(BaseModel):
     total_received:  int
     inserted:        int
+    updated:         int = 0
     skipped_duplicates: int
     skipped_invalid: int
     errors:          list[str] = Field(default_factory=list)

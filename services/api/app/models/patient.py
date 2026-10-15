@@ -35,6 +35,20 @@ class Patient(Base):
     insurance_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # PMS / Dentsoft profil alanları
+    sex: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    district: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    file_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    archive_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    occupation: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nationality: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    blood_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

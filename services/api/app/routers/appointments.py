@@ -102,6 +102,18 @@ class PatientSummary(_BaseModel):
     national_id: str | None = None
     birth_date: str | None = None
     notes: str | None = None
+    sex: str | None = None
+    address: str | None = None
+    city: str | None = None
+    district: str | None = None
+    country: str | None = None
+    external_id: str | None = None
+    avatar_url: str | None = None
+    file_number: str | None = None
+    archive_number: str | None = None
+    occupation: str | None = None
+    nationality: str | None = None
+    blood_type: str | None = None
 
 
 class PatientsListResponse(_BaseModel):
@@ -118,6 +130,18 @@ class PatientCreateRequest(_BaseModel):
     insurance_number: str | None = None
     birth_date: str | None = None
     notes: str | None = None
+    sex: str | None = None
+    address: str | None = None
+    city: str | None = None
+    district: str | None = None
+    country: str | None = None
+    external_id: str | None = None
+    avatar_url: str | None = None
+    file_number: str | None = None
+    archive_number: str | None = None
+    occupation: str | None = None
+    nationality: str | None = None
+    blood_type: str | None = None
 
 
 class PatientUpdateRequest(_BaseModel):
@@ -129,6 +153,26 @@ class PatientUpdateRequest(_BaseModel):
     insurance_provider: str | None = None
     birth_date: str | None = None
     notes: str | None = None
+    sex: str | None = None
+    address: str | None = None
+    city: str | None = None
+    district: str | None = None
+    country: str | None = None
+    external_id: str | None = None
+    avatar_url: str | None = None
+    file_number: str | None = None
+    archive_number: str | None = None
+    occupation: str | None = None
+    nationality: str | None = None
+    blood_type: str | None = None
+
+
+_PATIENT_COLS = """
+    id, full_name, phone, email, insurance_type, insurance_provider,
+    national_id, birth_date, notes, sex, address, city, district, country,
+    external_id, avatar_url, file_number, archive_number, occupation,
+    nationality, blood_type
+"""
 
 
 def _patient_summary(row) -> PatientSummary:
@@ -143,6 +187,18 @@ def _patient_summary(row) -> PatientSummary:
         national_id=row.get("national_id"),
         birth_date=birth.isoformat() if hasattr(birth, "isoformat") else (str(birth) if birth else None),
         notes=row.get("notes"),
+        sex=row.get("sex"),
+        address=row.get("address"),
+        city=row.get("city"),
+        district=row.get("district"),
+        country=row.get("country"),
+        external_id=row.get("external_id"),
+        avatar_url=row.get("avatar_url"),
+        file_number=row.get("file_number"),
+        archive_number=row.get("archive_number"),
+        occupation=row.get("occupation"),
+        nationality=row.get("nationality"),
+        blood_type=row.get("blood_type"),
     )
 
 
@@ -242,9 +298,8 @@ async def list_patients(
         pattern_fold = f"%{q_fold}%"
 
     if q_clean:
-        query_text = """
-            SELECT p.id, p.full_name, p.phone, p.email, p.insurance_type, p.insurance_provider,
-                   p.national_id, p.birth_date, p.notes
+        query_text = f"""
+            SELECT {_PATIENT_COLS}
             FROM patients p
             WHERE p.clinic_id = :cid
               AND (
@@ -263,9 +318,8 @@ async def list_patients(
             "limit": limit,
         }
     else:
-        query_text = """
-            SELECT p.id, p.full_name, p.phone, p.email, p.insurance_type, p.insurance_provider,
-                   p.national_id, p.birth_date, p.notes
+        query_text = f"""
+            SELECT {_PATIENT_COLS}
             FROM patients p
             WHERE p.clinic_id = :cid
             ORDER BY p.full_name
@@ -305,24 +359,28 @@ async def create_patient(
     email = data.email.strip() if data.email else None
     insurance_type = data.insurance_type if data.insurance_type in ("none", "sgk", "private", "mixed") else "none"
     national_id = (data.national_id or "").strip() or None
+    sex = data.sex if data.sex in ("female", "male", "other", "unknown") else None
 
     try:
         row = (
             await db.execute(
                 text(
-                    """
+                    f"""
                     INSERT INTO patients (
                         clinic_id, full_name, phone, email,
                         national_id, insurance_type, insurance_provider, insurance_number,
-                        birth_date, notes
+                        birth_date, notes, sex, address, city, district, country,
+                        external_id, avatar_url, file_number, archive_number,
+                        occupation, nationality, blood_type
                     )
                     VALUES (
                         :cid, :full_name, :phone, :email,
                         :national_id, :insurance_type, :insurance_provider, :insurance_number,
-                        :birth_date,
-                        :notes
+                        :birth_date, :notes, :sex, :address, :city, :district, :country,
+                        :external_id, :avatar_url, :file_number, :archive_number,
+                        :occupation, :nationality, :blood_type
                     )
-                    RETURNING id, full_name, phone, email, insurance_type, insurance_provider, national_id, birth_date, notes
+                    RETURNING {_PATIENT_COLS}
                     """
                 ).bindparams(bindparam("birth_date", type_=SADate())),
                 {
@@ -336,6 +394,18 @@ async def create_patient(
                     "insurance_number": data.insurance_number,
                     "birth_date": _parse_birth_date(data.birth_date),
                     "notes": data.notes,
+                    "sex": sex,
+                    "address": (data.address or "").strip() or None,
+                    "city": (data.city or "").strip() or None,
+                    "district": (data.district or "").strip() or None,
+                    "country": (data.country or "").strip() or None,
+                    "external_id": (data.external_id or "").strip() or None,
+                    "avatar_url": (data.avatar_url or "").strip() or None,
+                    "file_number": (data.file_number or "").strip() or None,
+                    "archive_number": (data.archive_number or "").strip() or None,
+                    "occupation": (data.occupation or "").strip() or None,
+                    "nationality": (data.nationality or "").strip() or None,
+                    "blood_type": (data.blood_type or "").strip() or None,
                 },
             )
         ).mappings().first()
@@ -345,8 +415,8 @@ async def create_patient(
         row = (
             await db.execute(
                 text(
-                    """
-                    SELECT id, full_name, phone, email, insurance_type, insurance_provider, national_id, birth_date, notes
+                    f"""
+                    SELECT {_PATIENT_COLS}
                     FROM patients
                     WHERE clinic_id = :cid
                       AND LOWER(TRIM(full_name)) = LOWER(TRIM(:full_name))
@@ -392,13 +462,14 @@ async def update_patient(
         phone = _normalize_tr_phone_to_e164(raw) if raw else None
     national_id = (data.national_id or "").strip() or None if data.national_id is not None else None
     insurance_type = data.insurance_type if data.insurance_type in ("none", "sgk", "private", "mixed") else None
+    sex = data.sex if data.sex in ("female", "male", "other", "unknown") else None
     clear_birth = "birth_date" in payload and not (data.birth_date or "").strip()
     parsed_birth = _parse_birth_date(data.birth_date) if "birth_date" in payload else None
 
     row = (
         await db.execute(
             text(
-                """
+                f"""
                 UPDATE patients
                 SET
                     full_name = COALESCE(:full_name, full_name),
@@ -411,9 +482,21 @@ async def update_patient(
                         WHEN :clear_birth THEN NULL
                         ELSE COALESCE(:birth_date, birth_date)
                     END,
-                    notes = COALESCE(:notes, notes)
+                    notes = COALESCE(:notes, notes),
+                    sex = COALESCE(:sex, sex),
+                    address = COALESCE(:address, address),
+                    city = COALESCE(:city, city),
+                    district = COALESCE(:district, district),
+                    country = COALESCE(:country, country),
+                    external_id = COALESCE(:external_id, external_id),
+                    avatar_url = COALESCE(:avatar_url, avatar_url),
+                    file_number = COALESCE(:file_number, file_number),
+                    archive_number = COALESCE(:archive_number, archive_number),
+                    occupation = COALESCE(:occupation, occupation),
+                    nationality = COALESCE(:nationality, nationality),
+                    blood_type = COALESCE(:blood_type, blood_type)
                 WHERE id = :pid AND clinic_id = :cid
-                RETURNING id, full_name, phone, email, insurance_type, insurance_provider, national_id, birth_date, notes
+                RETURNING {_PATIENT_COLS}
                 """
             ).bindparams(bindparam("birth_date", type_=SADate())),
             {
@@ -426,6 +509,18 @@ async def update_patient(
                 "clear_birth": clear_birth,
                 "birth_date": parsed_birth,
                 "notes": data.notes,
+                "sex": sex if "sex" in payload else None,
+                "address": (data.address or "").strip() or None if "address" in payload else None,
+                "city": (data.city or "").strip() or None if "city" in payload else None,
+                "district": (data.district or "").strip() or None if "district" in payload else None,
+                "country": (data.country or "").strip() or None if "country" in payload else None,
+                "external_id": (data.external_id or "").strip() or None if "external_id" in payload else None,
+                "avatar_url": (data.avatar_url or "").strip() or None if "avatar_url" in payload else None,
+                "file_number": (data.file_number or "").strip() or None if "file_number" in payload else None,
+                "archive_number": (data.archive_number or "").strip() or None if "archive_number" in payload else None,
+                "occupation": (data.occupation or "").strip() or None if "occupation" in payload else None,
+                "nationality": (data.nationality or "").strip() or None if "nationality" in payload else None,
+                "blood_type": (data.blood_type or "").strip() or None if "blood_type" in payload else None,
                 "pid": str(patient_id),
                 "cid": str(claims["clinic_id"]),
             },
@@ -453,9 +548,8 @@ async def get_patient(
     row = (
         await db.execute(
             text(
-                """
-                SELECT id, full_name, phone, email, insurance_type, insurance_provider,
-                       national_id, birth_date, notes
+                f"""
+                SELECT {_PATIENT_COLS}
                 FROM patients
                 WHERE id = :pid AND clinic_id = :cid
                 """
