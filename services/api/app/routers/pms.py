@@ -28,7 +28,9 @@ from app.schemas import (
     SyncResultResponse,
     TestConnectionResponse,
 )
+from app.schemas.integration import PmsAppointmentImportRequest, PmsAppointmentImportResult
 from app.services.import_service import import_patients_excel, import_patients_json
+from app.services.pms_appointment_import_service import import_pms_appointments
 from app.services.sync_engine import sync_clinic
 from app.tasks.post_op_tasks import send_postop_followup_for_appointment
 from shared.auth_middleware import require_role, set_rls_context
@@ -124,6 +126,25 @@ async def import_patients_from_json(
 ) -> ImportResult:
     await set_rls_context(db, claims["clinic_id"])
     return await import_patients_json(body, clinic_id=claims["clinic_id"], db=db)
+
+
+@router.post(
+    "/import/appointments",
+    response_model=PmsAppointmentImportResult,
+    status_code=status.HTTP_200_OK,
+    summary="PMS takviminden randevuları içe aktar (tarayıcı eklentisi)",
+    description=(
+        "Harici randevu kimliğiyle upsert yapar: aynı randevu tekrar gelirse güncellenir. "
+        "Hekim yoksa isimle oluşturulur, hasta yoksa harici kimlik + isimle oluşturulur."
+    ),
+)
+async def import_appointments_from_pms(
+    body: PmsAppointmentImportRequest,
+    claims: dict = Depends(require_role("owner", "doctor", "assistant")),
+    db: AsyncSession = Depends(get_db),
+) -> PmsAppointmentImportResult:
+    await set_rls_context(db, claims["clinic_id"])
+    return await import_pms_appointments(body, clinic_id=claims["clinic_id"], db=db)
 
 
 @router.post(

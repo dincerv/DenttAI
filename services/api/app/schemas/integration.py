@@ -8,6 +8,7 @@ eksik opsiyonel alanlar None olarak geçer.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -190,6 +191,59 @@ class ExternalAppointment(BaseModel):
     scheduled_at:  str          # ISO 8601 string — servis tarafı parse eder
     specialty:     str | None = None
     notes:         str | None = None
+
+
+# ── PMS takvim senkronu (tarayıcı eklentisi) ──────────────
+
+AppointmentStatusLiteral = Literal["scheduled", "confirmed", "cancelled", "completed", "no_show"]
+
+
+class PmsDoctorIn(BaseModel):
+    external_id: str = Field(..., min_length=1, max_length=128)
+    full_name: str = Field(..., min_length=2, max_length=255)
+
+
+class PmsAppointmentIn(BaseModel):
+    external_id: str = Field(..., min_length=1, max_length=128)
+    start: datetime
+    end: datetime | None = None
+    doctor_external_id: str | None = Field(None, max_length=128)
+    doctor_name: str | None = Field(None, max_length=255)
+    patient_external_id: str | None = Field(None, max_length=128)
+    patient_name: str = Field(..., min_length=2, max_length=255)
+    patient_phone: str | None = Field(None, max_length=20)
+    treatment: str | None = Field(None, max_length=100)
+    notes: str | None = Field(None, max_length=2000)
+    status: AppointmentStatusLiteral = "scheduled"
+    is_new_patient: bool | None = None
+
+    @field_validator(
+        "doctor_external_id", "doctor_name", "patient_external_id", "patient_phone", "treatment", "notes",
+        mode="before",
+    )
+    @classmethod
+    def empty_str_to_none(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+
+class PmsAppointmentImportRequest(BaseModel):
+    source: Literal["dentsoft", "drdentes"] = "dentsoft"
+    doctors: list[PmsDoctorIn] = Field(default_factory=list, max_length=500)
+    appointments: list[PmsAppointmentIn] = Field(default_factory=list, max_length=1000)
+
+
+class PmsAppointmentImportResult(BaseModel):
+    total_received: int
+    inserted: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    skipped_invalid: int = 0
+    patients_created: int = 0
+    doctors_created: int = 0
+    errors: list[str] = Field(default_factory=list)
 
 
 # ── Entegrasyon Konfigürasyon Şemaları ─────────────────────
