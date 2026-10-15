@@ -742,6 +742,7 @@ export const PROVIDERS = {
     ],
     deltaStrategy: 'seen',
     maxPages: 1,
+    calendar: true,
     periodicFetch: fetchPagedJson,
     enrichItems: enrichDentsoftItems,
     periodicOptions: {

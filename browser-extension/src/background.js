@@ -12,6 +12,7 @@
  */
 
 import { PROVIDERS, providerForUrl } from './providers.js';
+import { getCalendarShape, ingestCalendarIntercept, isCalendarUrl, resetCalendar, runCalendarSync } from './calendar-sync.js';
 import { enqueueNewRecords, peekQueue, queueSize, recordDeadLetter, removeFromQueue, resetProvider } from './delta-store.js';
 import { AuthError, ValidationError, clearSession, getSessionInfo, importPatients, isAuthenticated, login } from './dentai-client.js';
 
@@ -163,21 +164,33 @@ async function resolveTarget(provider) {
   return baseUrl ? { tabId: null, baseUrl } : null;
 }
 
-async function executeFetch(provider, target, page) {
+/** func self-contained olmalı: açık sekme varsa sayfanın MAIN world'ünde çalışır. */
+async function executeIn(target, func, args) {
   try {
     if (target.tabId !== null) {
       const [injection] = await chrome.scripting.executeScript({
         target: { tabId: target.tabId },
         world: 'MAIN',
-        func: provider.periodicFetch,
-        args: [target.baseUrl, provider.periodicOptions, page],
+        func,
+        args,
       });
       return injection?.result ?? { ok: false, reason: 'NO_RESULT' };
     }
-    return await provider.periodicFetch(target.baseUrl, provider.periodicOptions, page);
+    return await func(...args);
   } catch (error) {
     return { ok: false, reason: 'FETCH_ERROR', message: String(error?.message || error) };
   }
+}
+
+function executeFetch(provider, target, page) {
+  return executeIn(target, provider.periodicFetch, [target.baseUrl, provider.periodicOptions, page]);
+}
+
+async function runCalendar(provider) {
+  if (!provider.calendar) return;
+  const target = await resolveTarget(provider);
+  if (!target) return;
+  await runCalendarSync(provider, target, (func, args) => executeIn(target, func, args), updateStatus);
 }
 
 async function runPeriodic(provider) {
@@ -211,6 +224,11 @@ async function syncAll(trigger) {
       await updateStatus(provider.id, { lastPeriodicError: String(error?.message || error) });
     }
     await flushQueue(provider.id);
+    try {
+      await runCalendar(provider);
+    } catch (error) {
+      await updateStatus(provider.id, { calendar: { lastError: String(error?.message || error) } });
+    }
   }
   console.info(`[dentai-sync] ${trigger} tamamlandı`);
 }
@@ -241,6 +259,10 @@ async function handleContentMessage(message, sender) {
 
     const origin = new URL(sender.url).origin;
     await chrome.storage.local.set({ [originKey(provider.id)]: origin });
+
+    if (provider.calendar && isCalendarUrl(message.url)) {
+      return ingestCalendarIntercept(provider.id, message.url, payload, updateStatus);
+    }
 
     // SearchList yakalandıysa TC eksik kayıtlar için kart sayfasını sessizce oku.
     if (provider.enrichItems && /\/Patient\/SearchList/i.test(message.url)) {
@@ -275,8 +297,12 @@ async function handlePopupMessage(message) {
     case 'RESET_PROVIDER':
       if (!PROVIDERS[message.providerId]) return { ok: false };
       await resetProvider(message.providerId);
-      await updateStatus(message.providerId, { queued: 0, lastError: null });
+      await resetCalendar(message.providerId);
+      await updateStatus(message.providerId, { queued: 0, lastError: null, calendar: null, calendarLive: null });
       return { ok: true };
+    case 'GET_CALENDAR_SHAPE':
+      if (!PROVIDERS[message.providerId]) return { ok: false };
+      return { ok: true, shape: await getCalendarShape(message.providerId) };
     case 'GET_STATUS': {
       const keys = Object.keys(PROVIDERS).map(statusKey);
       const stored = await chrome.storage.local.get(keys);

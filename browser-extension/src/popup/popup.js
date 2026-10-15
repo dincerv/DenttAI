@@ -28,6 +28,25 @@ function sessionBadge(status) {
   return '<span class="badge warn">Bekliyor</span>';
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+function calendarStats(p) {
+  const c = p.calendar;
+  if (!c && !p.calendarLive) return '';
+  const r = c?.lastResult;
+  const backfill = c?.backfillDone
+    ? 'geçmiş tamamlandı'
+    : c?.backfillCursor
+      ? `geçmiş: ${new Date(c.backfillCursor).toLocaleDateString('tr-TR')} öncesi taranacak`
+      : 'geçmiş tarama bekliyor';
+  return `<br><b>Takvim</b> · Son: ${formatTime(c?.lastRunAt)}
+    ${r ? ` · +${r.inserted} / güncelle ${r.updated} · yeni hasta ${r.patients_created} · yeni hekim ${r.doctors_created}` : ''}
+    <br>${backfill}
+    ${c?.lastError ? `<br>Takvim hata: ${escapeHtml(c.lastError)}` : ''}`;
+}
+
 function renderProviders(providers) {
   const list = $('provider-list');
   list.innerHTML = '';
@@ -45,8 +64,10 @@ function renderProviders(providers) {
         ${p.lastSource ? `<br>Kaynak: ${p.lastSource}` : ''}
         ${p.lastError ? `<br>Hata: ${p.lastError}` : ''}
         ${p.lastPeriodicError ? `<br>Çekim: ${p.lastPeriodicError}` : ''}
+        ${calendarStats(p)}
       </div>
       <button type="button" class="reset-btn" data-reset="${p.id}">Delta sıfırla</button>
+      ${p.calendar ? `<button type="button" class="reset-btn" data-shape="${p.id}">Takvim alan yapısını kopyala</button>` : ''}
     `;
     list.appendChild(li);
   }
@@ -57,6 +78,18 @@ function renderProviders(providers) {
       btn.disabled = true;
       await send('RESET_PROVIDER', { providerId: btn.dataset.reset });
       await refresh();
+    });
+  });
+
+  list.querySelectorAll('[data-shape]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const res = await send('GET_CALENDAR_SHAPE', { providerId: btn.dataset.shape });
+      if (!res?.shape) {
+        btn.textContent = 'Henüz yapı yok — takvimi açıp sync edin';
+        return;
+      }
+      await navigator.clipboard.writeText(JSON.stringify(res.shape, null, 2));
+      btn.textContent = 'Kopyalandı (hasta verisi içermez)';
     });
   });
 }
@@ -120,7 +153,7 @@ $('sync-btn').addEventListener('click', async () => {
   const msg = $('sync-msg');
   btn.disabled = true;
   msg.hidden = false;
-  msg.textContent = 'Senkron çalışıyor… SearchList + kart detayları (TC) okunuyor, 10–30 sn sürebilir.';
+  msg.textContent = 'Senkron çalışıyor… hastalar + takvim randevuları okunuyor, 30–90 sn sürebilir.';
   try {
     const res = await send('SYNC_NOW');
     if (!res?.ok) throw new Error(res?.error || 'Sync başarısız');

@@ -6,6 +6,7 @@
  *   GET  /api/auth/health                  → X-CSRF-Token header
  *   POST /api/auth/refresh                 → TokenResponse (Bearer olmadığı için CSRF ister)
  *   POST /api/integration/import/patients  → ImportResult (Bearer ile CSRF muaf)
+ *   POST /api/integration/import/appointments → PmsAppointmentImportResult
  */
 
 export const DEFAULT_API_BASE = 'https://denttai-production.up.railway.app';
@@ -150,13 +151,13 @@ async function getAccessToken({ force = false } = {}) {
   return (await refreshInFlight).accessToken;
 }
 
-export async function importPatients(patients) {
+async function postImport(path, payload) {
   const base = await getApiBase();
   const post = (token) =>
-    fetch(`${base}/api/integration/import/patients`, {
+    fetch(`${base}${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patients }),
+      body: JSON.stringify(payload),
     });
 
   let res = await post(await getAccessToken());
@@ -166,4 +167,13 @@ export async function importPatients(patients) {
   if (res.status === 422) throw new ValidationError('Kayıtlar doğrulanamadı', await errorDetail(res));
   if (!res.ok) throw new Error(`DentAI import başarısız: HTTP ${res.status}`);
   return res.json();
+}
+
+export function importPatients(patients) {
+  return postImport('/api/integration/import/patients', { patients });
+}
+
+/** POST /api/integration/import/appointments → PmsAppointmentImportResult */
+export function importAppointments({ source, doctors, appointments }) {
+  return postImport('/api/integration/import/appointments', { source, doctors, appointments });
 }
