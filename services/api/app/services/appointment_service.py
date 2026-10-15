@@ -196,7 +196,16 @@ async def list_appointments(
             a.scheduled_at, a.duration_minutes, a.is_new_patient, a.treatment_follow_up_enabled, a.status, a.type, a.notes, a.created_at, a.updated_at,
             d.full_name  AS doctor_name,
             p.full_name  AS patient_name,
-            p.phone      AS patient_phone
+            p.phone      AS patient_phone,
+            p.file_number AS patient_file_number,
+            p.national_id AS patient_national_id,
+            p.birth_date::text AS patient_birth_date,
+            p.sex AS patient_sex,
+            p.city AS patient_city,
+            p.district AS patient_district,
+            p.address AS patient_address,
+            p.insurance_type AS patient_insurance_type,
+            p.external_id AS patient_external_id
         FROM appointments a
         LEFT JOIN doctors  d ON d.id = a.doctor_id
         LEFT JOIN patients p ON p.id = a.patient_id
@@ -264,6 +273,15 @@ async def list_appointments(
             doctor_name=r["doctor_name"],
             patient_name=r["patient_name"],
             patient_phone=r["patient_phone"],
+            patient_file_number=r["patient_file_number"],
+            patient_national_id=r["patient_national_id"],
+            patient_birth_date=r["patient_birth_date"],
+            patient_sex=r["patient_sex"],
+            patient_city=r["patient_city"],
+            patient_district=r["patient_district"],
+            patient_address=r["patient_address"],
+            patient_insurance_type=r["patient_insurance_type"],
+            patient_external_id=r["patient_external_id"],
         )
         for r in rows
     ]

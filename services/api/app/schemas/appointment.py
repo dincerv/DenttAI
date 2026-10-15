@@ -91,6 +91,16 @@ class AppointmentResponse(BaseModel):
     doctor_name: str | None = None
     patient_name: str | None = None
     patient_phone: str | None = None
+    # Hasta kartı (PMS sync / hasta profili) — randevu detayında gösterilir
+    patient_file_number: str | None = None
+    patient_national_id: str | None = None
+    patient_birth_date: str | None = None
+    patient_sex: str | None = None
+    patient_city: str | None = None
+    patient_district: str | None = None
+    patient_address: str | None = None
+    patient_insurance_type: str | None = None
+    patient_external_id: str | None = None
 
 
 class AppointmentListResponse(BaseModel):

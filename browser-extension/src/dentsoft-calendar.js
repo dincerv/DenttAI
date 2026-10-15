@@ -178,10 +178,22 @@ function mapStatus(text) {
   if (!v) return null;
   if (/gelmedi/.test(v)) return 'no_show';
   if (/(iptal|ertelendi|cancel)/.test(v)) return 'cancelled';
-  if (/(çıktı|cikti|tamamland|bitti|complete)/.test(v)) return 'completed';
-  if (/(geldi|odaya|confirm)/.test(v)) return 'confirmed';
-  if (/(randevu verildi|bekleniyor|schedul)/.test(v)) return 'scheduled';
+  if (/(klinikten\s*çıkt|klinikten\s*cikt|çıktı|cikti|tamamland|bitti|complete)/.test(v)) return 'completed';
+  if (/(hasta\s*geldi|odaya\s*al|geldi|confirm)/.test(v)) return 'confirmed';
+  if (/(randevu\s*verildi|yeni\s*hasta|eski\s*hasta|acil|online|recall|bekleniyor|schedul)/.test(v)) return 'scheduled';
   return null;
+}
+
+/** Dentsoft lejant etiketini notlara eklemek için (Acil / Online / Recall vb.) */
+function statusTags(text) {
+  const v = String(text ?? '').toLocaleLowerCase('tr-TR');
+  const tags = [];
+  if (/acil/.test(v)) tags.push('Acil');
+  if (/online/.test(v)) tags.push('Online');
+  if (/recall/.test(v)) tags.push('Recall');
+  if (/yeni\s*hasta/.test(v)) tags.push('Yeni Hasta');
+  if (/eski\s*hasta/.test(v)) tags.push('Eski Hasta');
+  return tags;
 }
 
 const NON_APPOINTMENT_RE = /(çalışmıyor|calismiyor|izinli|kapalı|kapali)/i;
@@ -223,8 +235,17 @@ export function normalizeEvent(item, doctorsById) {
   const externalId = rawId !== null ? String(rawId) : `${doctorId ?? '-'}|${start}|${patientId ?? patientName}`;
 
   const treatment = clean(pick(raw, ['TreatmentName', 'Treatment', 'AppointmentType', 'AppointmentTypeName', 'TypeName']) ?? titleParts[1], 100);
-  const notes = clean(pick(raw, ['Note', 'Notes', 'Description', 'description', 'AppointmentNote']) ?? titleParts.slice(2).join(' | '), 2000);
   const statusLabel = statusText !== null ? stripHtml(statusText) : '';
+  const tags = statusTags(`${statusLabel} ${titleParts.join(' ')}`);
+  const baseNotes = clean(pick(raw, ['Note', 'Notes', 'Description', 'description', 'AppointmentNote']) ?? titleParts.slice(2).join(' | '), 2000);
+  const tagPrefix = tags.length ? `[${tags.join(', ')}]` : '';
+  const notes = clean([tagPrefix, baseNotes].filter(Boolean).join(' ').trim(), 2000);
+  const isNew =
+    raw.IsNewPatient === true
+    || raw.isNewPatient === true
+    || /yeni\s*hasta/i.test(statusLabel)
+    || tags.includes('Yeni Hasta')
+    || (raw.IsNewPatient === false || tags.includes('Eski Hasta') ? false : null);
 
   return {
     external_id: externalId.slice(0, 128),
@@ -234,11 +255,11 @@ export function normalizeEvent(item, doctorsById) {
     doctor_name: doctorLabel,
     patient_external_id: patientId !== null ? String(patientId).slice(0, 128) : null,
     patient_name: patientName,
-    patient_phone: clean(pick(raw, ['ContactMobile', 'PatientPhone', 'Phone', 'phone', 'Gsm', 'Mobile']), 20),
+    patient_phone: clean(pick(raw, ['ContactMobile', 'PatientPhone', 'Phone', 'phone', 'Gsm', 'Mobile', 'ContactPhone', 'CepTelefon']), 20),
     treatment,
     notes,
     status: mapStatus(statusLabel) ?? 'scheduled',
-    is_new_patient: /yeni hasta/i.test(statusLabel) || raw.IsNewPatient === true || raw.isNewPatient === true,
+    is_new_patient: isNew === null ? false : isNew,
   };
 }
 

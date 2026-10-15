@@ -115,6 +115,15 @@ export interface Appointment {
   patient_phone?: string;
   doctor_name?: string;
   specialty?: string;
+  patient_file_number?: string | null;
+  patient_national_id?: string | null;
+  patient_birth_date?: string | null;
+  patient_sex?: string | null;
+  patient_city?: string | null;
+  patient_district?: string | null;
+  patient_address?: string | null;
+  patient_insurance_type?: string | null;
+  patient_external_id?: string | null;
 }
 
 export interface AppointmentCreateBody {

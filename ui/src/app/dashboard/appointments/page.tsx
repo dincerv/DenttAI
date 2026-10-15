@@ -39,13 +39,33 @@ const DOCTOR_COLORS = [
   { bg: 'bg-rose-100',   border: 'border-rose-300',   text: 'text-rose-900',   hex: '#ffe4e6' },
 ];
 
+/** Dentsoft lejantına yakın durum renkleri (kart arka planı / sol şerit) */
 const STATUS_COLORS: Record<string, string> = {
-  scheduled: 'bg-blue-500',  confirmed: 'bg-green-500', completed: 'bg-slate-400',
-  cancelled: 'bg-red-500',   no_show:   'bg-orange-500',
+  scheduled: 'bg-sky-500',
+  confirmed: 'bg-emerald-500',
+  completed: 'bg-slate-400',
+  cancelled: 'bg-red-500',
+  no_show: 'bg-orange-500',
 };
 const STATUS_LABELS: Record<string, string> = {
-  scheduled: 'Planlandı', confirmed: 'Onaylı', completed: 'Tamamlandı',
-  cancelled: 'İptal',     no_show:   'Gelmedi',
+  scheduled: 'Randevu Verildi',
+  confirmed: 'Hasta Geldi',
+  completed: 'Klinikten Çıktı',
+  cancelled: 'İptal / Ertelendi',
+  no_show: 'Gelmedi',
+};
+const STATUS_BLOCK: Record<string, { bg: string; border: string; text: string; bar: string }> = {
+  scheduled: { bg: 'bg-sky-50', border: 'border-sky-300', text: 'text-sky-950', bar: 'bg-sky-500' },
+  confirmed: { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-950', bar: 'bg-emerald-500' },
+  completed: { bg: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-800', bar: 'bg-slate-400' },
+  cancelled: { bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-900', bar: 'bg-red-500' },
+  no_show: { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-950', bar: 'bg-orange-500' },
+};
+const SEX_LABELS: Record<string, string> = {
+  female: 'Kadın', male: 'Erkek', other: 'Diğer', unknown: 'Belirtilmemiş',
+};
+const INSURANCE_LABELS: Record<string, string> = {
+  none: 'Yok', sgk: 'SGK', private: 'Özel', mixed: 'Karma',
 };
 
 const SPECIALTY_OPTIONS = [
@@ -440,6 +460,41 @@ function AppointmentDetail({
             </div>
           </div>
 
+          {/* PMS / hasta kartı ekstra alanları */}
+          {(appt.patient_file_number || appt.patient_national_id || appt.patient_birth_date || appt.patient_sex
+            || appt.patient_city || appt.patient_district || appt.patient_address || appt.patient_insurance_type
+            || appt.patient_external_id) && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Hasta Bilgileri</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {appt.patient_file_number && (
+                  <div><p className="text-[10px] uppercase text-slate-400">Dosya No</p><p className="font-medium text-slate-800">{appt.patient_file_number}</p></div>
+                )}
+                {appt.patient_external_id && (
+                  <div><p className="text-[10px] uppercase text-slate-400">PMS ID</p><p className="font-medium text-slate-800">{appt.patient_external_id}</p></div>
+                )}
+                {appt.patient_national_id && (
+                  <div><p className="text-[10px] uppercase text-slate-400">TC</p><p className="font-medium text-slate-800">{appt.patient_national_id}</p></div>
+                )}
+                {appt.patient_birth_date && (
+                  <div><p className="text-[10px] uppercase text-slate-400">Doğum</p><p className="font-medium text-slate-800">{appt.patient_birth_date}</p></div>
+                )}
+                {appt.patient_sex && (
+                  <div><p className="text-[10px] uppercase text-slate-400">Cinsiyet</p><p className="font-medium text-slate-800">{SEX_LABELS[appt.patient_sex] ?? appt.patient_sex}</p></div>
+                )}
+                {appt.patient_insurance_type && (
+                  <div><p className="text-[10px] uppercase text-slate-400">Sigorta</p><p className="font-medium text-slate-800">{INSURANCE_LABELS[appt.patient_insurance_type] ?? appt.patient_insurance_type}</p></div>
+                )}
+                {(appt.patient_city || appt.patient_district) && (
+                  <div className="col-span-2"><p className="text-[10px] uppercase text-slate-400">İl / İlçe</p><p className="font-medium text-slate-800">{[appt.patient_city, appt.patient_district].filter(Boolean).join(' / ')}</p></div>
+                )}
+                {appt.patient_address && (
+                  <div className="col-span-2"><p className="text-[10px] uppercase text-slate-400">Adres</p><p className="font-medium text-slate-800">{appt.patient_address}</p></div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-lg bg-slate-50 p-3">
                 <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Hasta Tipi</p>
@@ -512,8 +567,11 @@ function AppointmentDetail({
               </div>
             ) : (
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Saat</p>
-                <p className="text-sm font-medium text-slate-800">{format(dt, 'HH:mm')}</p>
+                <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Saat / Süre</p>
+                <p className="text-sm font-medium text-slate-800">
+                  {format(dt, 'HH:mm')}
+                  {appt.duration_minutes ? ` · ${appt.duration_minutes} dk` : ''}
+                </p>
               </div>
             )}
             <div className="rounded-lg bg-slate-50 p-3">
@@ -927,7 +985,7 @@ function computeOverlapLayout(appts: Appointment[]): LayoutInfo[] {
   return result;
 }
 
-/* ── Appointment block on the calendar ────────────────── */
+/* ── Appointment block — Dentsoft takvim kutusu gibi ───── */
 function ApptBlock({
   appt, colorIdx, onClick, colIndex = 0, colCount = 1,
 }: {
@@ -936,30 +994,52 @@ function ApptBlock({
 }) {
   const dt = parseISO(appt.scheduled_at);
   const top = ((dt.getHours() * 60 + dt.getMinutes()) - HOUR_START * 60) / 30 * SLOT_HEIGHT;
-  const color = DOCTOR_COLORS[colorIdx % DOCTOR_COLORS.length];
+  const duration = Math.max(15, appt.duration_minutes ?? 30);
+  const heightPx = Math.max(28, (duration / 30) * SLOT_HEIGHT - 2);
+  const style = STATUS_BLOCK[appt.status] ?? STATUS_BLOCK.scheduled;
+  const doctorTint = DOCTOR_COLORS[colorIdx % DOCTOR_COLORS.length];
   const isCancelled = appt.status === 'cancelled';
   const widthPct = 100 / colCount;
   const leftPct = colIndex * widthPct;
+  const titleBits = [
+    appt.patient_name ?? 'Hasta',
+    appt.type,
+    appt.notes,
+    STATUS_LABELS[appt.status],
+  ].filter(Boolean);
 
   return (
     <button
       onClick={onClick}
-      className={`absolute rounded-lg border ${color.border} ${color.bg} px-1.5 py-1 text-left transition-all hover:shadow-md hover:scale-[1.01] overflow-hidden ${isCancelled ? 'opacity-40 line-through' : ''}`}
+      className={`absolute rounded-md border ${style.border} ${style.bg} pl-0 pr-1.5 py-0.5 text-left transition-all hover:shadow-md hover:z-10 overflow-hidden ${isCancelled ? 'opacity-50' : ''}`}
       style={{
         top: `${top}px`,
-        height: `${SLOT_HEIGHT - 2}px`,
+        height: `${heightPx}px`,
         minHeight: '28px',
         left: `calc(${leftPct}% + 1px)`,
         width: `calc(${widthPct}% - 2px)`,
+        boxShadow: `inset 3px 0 0 0 ${doctorTint.hex}`,
       }}
-      title={`${appt.patient_name ?? 'Hasta'} – ${format(dt, 'HH:mm')}`}
+      title={titleBits.join(' | ')}
     >
-      <p className={`text-[10px] font-bold ${color.text} leading-tight truncate`}>
-        {format(dt, 'HH:mm')} {appt.patient_name ?? 'Hasta'}
-      </p>
-      {SLOT_HEIGHT > 40 && appt.type && (
-        <p className={`text-[9px] ${color.text} opacity-70 truncate`}>{appt.type}</p>
-      )}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${style.bar}`} />
+      <div className="pl-2.5 h-full flex flex-col gap-0.5 overflow-hidden">
+        <p className={`text-[10px] font-bold ${style.text} leading-tight truncate ${isCancelled ? 'line-through' : ''}`}>
+          {format(dt, 'HH:mm')} {appt.patient_name ?? 'Hasta'}
+          {appt.is_new_patient ? (
+            <span className="ml-1 rounded px-0.5 text-[8px] font-semibold bg-emerald-600 text-white">Yeni</span>
+          ) : null}
+        </p>
+        {heightPx >= 36 && appt.type && (
+          <p className={`text-[9px] ${style.text} opacity-80 truncate`}>{appt.type}</p>
+        )}
+        {heightPx >= 52 && appt.notes && (
+          <p className={`text-[8px] ${style.text} opacity-60 truncate`}>{appt.notes}</p>
+        )}
+        {heightPx >= 68 && appt.patient_phone && (
+          <p className={`text-[8px] ${style.text} opacity-50 truncate`}>{appt.patient_phone}</p>
+        )}
+      </div>
     </button>
   );
 }

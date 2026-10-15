@@ -158,6 +158,11 @@ class _PatientResolver:
                 )
                 self.has_ext.add(pid)
                 self.by_ext[external_id] = pid
+            if phone:
+                await self.db.execute(
+                    text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID) AND (phone IS NULL OR phone = '')"),
+                    {"phone": phone, "pid": pid},
+                )
             return pid
 
         row = await self.db.execute(
