@@ -452,7 +452,7 @@ _UPDATE_SQL = text("""
         occupation = COALESCE(occupation, :occupation),
         nationality = COALESCE(nationality, :nationality),
         blood_type = COALESCE(blood_type, :blood_type),
-        phone = COALESCE(phone, :phone),
+        phone = COALESCE(:phone, phone),
         updated_at = NOW()
     WHERE id = CAST(:id AS UUID) AND clinic_id = CAST(:clinic_id AS UUID)
 """)

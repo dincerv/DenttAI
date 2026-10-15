@@ -260,12 +260,13 @@ async function enrichPatientsFromCards(providerId, execute, baseUrl, patientIds,
   if (!patientIds?.length) return { enriched: 0 };
   const key = enrichedPatientsKey(providerId);
   const { [key]: done = {} } = await chrome.storage.local.get(key);
-  const pending = patientIds.filter((id) => !done[id]).slice(0, 15);
+  // Telefon için kartı yeniden oku — daha önce zenginleştirilmiş olsa bile phone eksikse tekrar dene.
+  const pending = patientIds.filter((id) => done[id] !== 'phone').slice(0, 25);
   if (!pending.length) return { enriched: 0 };
 
   const res = await withTimeout(
-    execute(fetchDentsoftPatientCards, [baseUrl, pending, { delayMs: 200, max: 15 }]),
-    60000,
+    execute(fetchDentsoftPatientCards, [baseUrl, pending, { delayMs: 160, max: 25 }]),
+    90000,
     'TIMEOUT',
   );
   if (!res?.ok || !res.patients?.length) {
@@ -275,7 +276,9 @@ async function enrichPatientsFromCards(providerId, execute, baseUrl, patientIds,
   try {
     await importPatients(res.patients);
     for (const p of res.patients) {
-      if (p.external_id) done[p.external_id] = new Date().toISOString();
+      if (!p.external_id) continue;
+      const digits = String(p.phone || '').replace(/\D/g, '');
+      done[p.external_id] = digits.length >= 10 ? 'phone' : new Date().toISOString();
     }
     const keys = Object.keys(done);
     if (keys.length > 8000) {

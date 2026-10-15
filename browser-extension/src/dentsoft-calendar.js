@@ -322,11 +322,26 @@ export async function fetchDentsoftPatientCards(baseUrl, patientIds, options) {
       return m?.[1]?.trim() || null;
     };
     const first = (...vals) => vals.find((v) => v !== null && v !== undefined && String(v).trim() !== '') ?? null;
+    const extractGsm = () => {
+      const named = first(
+        field('ContactMobile'), field('ContactPhone'), field('Gsm'), field('GSM'),
+        field('Mobile'), field('MobilePhone'), field('CepTelefon'), field('CepTelefonu'),
+        field('Phone'), field('Telefon'),
+      );
+      if (named && named.replace(/\D/g, '').length >= 10) return named;
+      const nearLabel = html.match(/GSM[\s\S]{0,400}?<(?:input|INPUT)[^>]*(?:value=["']([^"']+)["']|[^>]*>)/i);
+      if (nearLabel?.[1]?.trim() && nearLabel[1].replace(/\D/g, '').length >= 10) return nearLabel[1].trim();
+      const tr = html.match(/\b(0?5\d{9})\b/);
+      if (tr?.[1]) return tr[1];
+      const spaced = html.match(/\b(5\d{2})\s*(\d{3})\s*(\d{2})\s*(\d{2})\b/);
+      if (spaced) return `${spaced[1]}${spaced[2]}${spaced[3]}${spaced[4]}`;
+      return null;
+    };
     return {
       firstName: field('PatientFirstName'),
       lastName: field('PatientLastName'),
       nationalId: field('PatientNumber'),
-      phone: first(field('ContactMobile'), field('ContactPhone')),
+      phone: extractGsm(),
       email: first(field('ContactEmail'), field('Email')),
       birthDate: first(field('PatientBirthDate'), field('BirthDate')),
       sex: first(field('PatientSex'), selectVal('PatientSex')),

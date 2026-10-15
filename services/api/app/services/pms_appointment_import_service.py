@@ -153,9 +153,9 @@ class _PatientResolver:
             hit = row.mappings().first()
             if hit:
                 self._remember(str(hit["id"]), hit["full_name"] or "", hit["phone"], hit["external_id"])
-                if phone and not hit["phone"]:
+                if phone:
                     await self.db.execute(
-                        text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID) AND (phone IS NULL OR phone = '')"),
+                        text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID)"),
                         {"phone": phone, "pid": str(hit["id"])},
                     )
                 return str(hit["id"])
@@ -199,7 +199,7 @@ class _PatientResolver:
                 self.by_ext[external_id] = pid
             if phone:
                 await self.db.execute(
-                    text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID) AND (phone IS NULL OR phone = '')"),
+                    text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID)"),
                     {"phone": phone, "pid": pid},
                 )
             return pid

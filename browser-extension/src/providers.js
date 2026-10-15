@@ -45,11 +45,44 @@ function parseDentsoftCardHtml(html) {
     return null;
   };
 
+  /** Dentsoft Bilgi → GSM (+90) alanı: ContactMobile veya etiket/regex. */
+  const extractGsm = () => {
+    const named = first(
+      field('ContactMobile'),
+      prop('ContactMobile'),
+      field('ContactPhone'),
+      field('Gsm'),
+      field('GSM'),
+      field('Mobile'),
+      field('MobilePhone'),
+      field('CepTelefon'),
+      field('CepTelefonu'),
+      field('Phone'),
+      field('Telefon'),
+    );
+    if (named) {
+      const digits = named.replace(/\D/g, '');
+      if (digits.length >= 10) return named;
+    }
+    // label "GSM" yakınındaki input value
+    const nearLabel = html.match(/GSM[\s\S]{0,400}?<(?:input|INPUT)[^>]*(?:value=["']([^"']+)["']|[^>]*>)/i);
+    if (nearLabel?.[1]?.trim()) {
+      const digits = nearLabel[1].replace(/\D/g, '');
+      if (digits.length >= 10) return nearLabel[1].trim();
+    }
+    // Sayfada görünen TR cep: 5xx xxx xx xx / 05xx...
+    const tr = html.match(/\b(0?5\d{9})\b/);
+    if (tr?.[1]) return tr[1];
+    const spaced = html.match(/\b(5\d{2})\s*(\d{3})\s*(\d{2})\s*(\d{2})\b/);
+    if (spaced) return `${spaced[1]}${spaced[2]}${spaced[3]}${spaced[4]}`;
+    return null;
+  };
+
   return {
     PatientFirstName: field('PatientFirstName'),
     PatientLastName: field('PatientLastName'),
     PatientNumber: field('PatientNumber'),
-    ContactMobile: first(field('ContactMobile'), prop('ContactMobile'), field('ContactPhone')),
+    ContactMobile: extractGsm(),
     ContactEmail: first(field('ContactEmail'), field('Email'), field('PatientEmail')),
     PatientBirthDate: first(field('PatientBirthDate'), field('BirthDate'), field('DogumTarihi')),
     PatientSex: first(field('PatientSex'), selectVal('PatientSex'), selectVal('Sex')),
@@ -459,15 +492,28 @@ async function enrichDentsoftItems(baseUrl, items, options) {
   const delayMs = Number(options.enrichDelayMs) || 200;
   const max = Math.min(items.length, Number(options.enrichMax) || 25);
   const onlyMissingTc = options.enrichOnlyMissingTc === true;
+  const preferMissingPhone = options.enrichPreferMissingPhone === true;
   const enrichTabs = options.enrichTabs !== false;
 
   const out = items.slice();
+  // Telefonu eksik olanları önce zenginleştir (randevu ekranı için kritik).
+  const order = out.map((_, i) => i);
+  if (preferMissingPhone) {
+    order.sort((a, b) => {
+      const pa = String(out[a]?.ContactMobile || out[a]?.phone || '').replace(/\D/g, '');
+      const pb = String(out[b]?.ContactMobile || out[b]?.phone || '').replace(/\D/g, '');
+      return (pa.length >= 10 ? 1 : 0) - (pb.length >= 10 ? 1 : 0);
+    });
+  }
   let enriched = 0;
-  for (let i = 0; i < out.length && enriched < max; i++) {
+  for (const i of order) {
+    if (enriched >= max) break;
     const item = out[i];
     if (!item?.ID) continue;
     const tcDigits = String(item.PatientNumber || '').replace(/\D/g, '');
     if (onlyMissingTc && tcDigits.length === 11 && item._enrichedFromCard) continue;
+    const hasPhone = String(item.ContactMobile || '').replace(/\D/g, '').length >= 10;
+    if (item._enrichedFromCard && hasPhone) continue;
 
     const patientId = encodeURIComponent(String(item.ID));
     try {
@@ -751,9 +797,10 @@ export const PROVIDERS = {
       loginPathRegex: '/(login|giris|auth)',
       enrich: true,
       enrichTabs: true,
-      enrichMax: 20,
-      enrichDelayMs: 180,
+      enrichMax: 50,
+      enrichDelayMs: 150,
       enrichOnlyMissingTc: false,
+      enrichPreferMissingPhone: true,
     },
     extractItems: (json) =>
       pickArray(json, [
