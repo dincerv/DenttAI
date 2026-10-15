@@ -26,11 +26,13 @@ import {
 
 const FORWARD_PAST_DAYS = 7;
 const FORWARD_FUTURE_DAYS = 91;
-const BACKFILL_WEEKS_PER_RUN = 26;
+const BACKFILL_WEEKS_PER_RUN = 12;
 const BACKFILL_STOP_EMPTY_WEEKS = 104;
 const BACKFILL_FLOOR = new Date(2000, 0, 1);
 const SEND_BATCH = 300;
 const MAX_SENT_ENTRIES = 60000;
+/** Tek haftalık Dentsoft çekimi için üst süre (ms). Aşılırsa sonraki haftaya geçilir. */
+const WEEK_FETCH_TIMEOUT_MS = 20000;
 
 const stateKey = (id) => `calendar:${id}`;
 const sentKey = (id) => `calendarSent:${id}`;
@@ -165,7 +167,62 @@ async function processChunks(providerId, chunks) {
 // ── Periyodik çalışma ─────────────────────────────────────────────────────
 
 function fetchOptions() {
-  return { doctorPath: DOCTOR_LIST_PATH, appointmentPath: APPOINTMENT_LIST_PATH, delayMs: 250, v: '66' };
+  return { doctorPath: DOCTOR_LIST_PATH, appointmentPath: APPOINTMENT_LIST_PATH, delayMs: 200, v: '66', timeoutMs: 15000 };
+}
+
+function withTimeout(promise, ms, reason = 'TIMEOUT') {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false, reason }), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Tek hafta çeker. Tüm aralığı tek executeScript'te göndermek Chrome'da NO_RESULT / takılma üretiyordu.
+ */
+async function fetchWeek(execute, baseUrl, range) {
+  const raw = await withTimeout(
+    execute(fetchDentsoftCalendarRanges, [baseUrl, [range], fetchOptions()]),
+    WEEK_FETCH_TIMEOUT_MS,
+  );
+  if (!raw || raw.reason === 'NO_RESULT') return { ok: false, reason: 'NO_RESULT' };
+  return raw;
+}
+
+async function pullAndSendWeeks(providerId, execute, baseUrl, ranges, updateStatus, statusPatch) {
+  const totals = emptyTotals();
+  let seen = 0;
+  let lastError = null;
+  let sessionExpired = false;
+  const perChunkCounts = [];
+
+  for (let i = 0; i < ranges.length; i++) {
+    const week = await fetchWeek(execute, baseUrl, ranges[i]);
+    if (!week?.ok) {
+      if (week?.reason === 'SESSION_EXPIRED') {
+        sessionExpired = true;
+        lastError = 'Dentsoft oturumu kapalı';
+        break;
+      }
+      lastError = `${week?.reason ?? 'HATA'}${week?.message ? `: ${week.message}` : ''}`;
+      // Tek hafta başarısız olsa bile diğer haftalara devam et (NO_RESULT / TIMEOUT).
+      perChunkCounts.push(0);
+      continue;
+    }
+    const processed = await processChunks(providerId, week.chunks || []);
+    seen += processed.appointments.length;
+    perChunkCounts.push(...processed.perChunkCounts);
+    if (processed.appointments.length || processed.doctors.length) {
+      addTotals(totals, await sendChanged(providerId, processed.doctors, processed.appointments));
+    }
+    if (i % 3 === 2 || i === ranges.length - 1) {
+      await updateStatus(providerId, {
+        calendar: { ...statusPatch, progress: `${i + 1}/${ranges.length}`, forwardSeen: seen, lastResult: { ...totals, sent: totals.inserted + totals.updated } },
+      });
+    }
+  }
+  return { totals, seen, lastError, sessionExpired, perChunkCounts };
 }
 
 /**
@@ -179,42 +236,43 @@ export function runCalendarSync(provider, target, execute, updateStatus) {
     const status = { lastRunAt: new Date().toISOString(), lastError: null };
 
     try {
-      // 1) İleri pencere
+      // 1) İleri pencere — hafta hafta
       const forward = weekRanges(addDays(base, -FORWARD_PAST_DAYS), addDays(base, FORWARD_FUTURE_DAYS));
-      const fwd = await execute(fetchDentsoftCalendarRanges, [target.baseUrl, forward, fetchOptions()]);
-      if (fwd?.chunks?.length) {
-        const processed = await processChunks(providerId, fwd.chunks);
-        const result = await sendChanged(providerId, processed.doctors, processed.appointments);
-        status.forwardSeen = processed.appointments.length;
-        status.lastResult = result;
-      }
-      if (!fwd?.ok) {
-        status.lastError = fwd?.reason === 'SESSION_EXPIRED' ? 'Dentsoft oturumu kapalı' : `${fwd?.reason ?? 'HATA'} ${fwd?.message ?? ''}`.trim();
+      const fwd = await pullAndSendWeeks(providerId, execute, target.baseUrl, forward, updateStatus, { ...state, ...status, phase: 'forward' });
+      status.forwardSeen = fwd.seen;
+      status.lastResult = { ...fwd.totals, sent: fwd.totals.inserted + fwd.totals.updated };
+      if (fwd.sessionExpired) {
+        status.lastError = fwd.lastError;
         await updateStatus(providerId, { calendar: { ...state, ...status } });
         return;
       }
+      if (fwd.lastError && !fwd.seen) {
+        status.lastError = fwd.lastError;
+      }
 
-      // 2) Geçmiş tarama
+      // 2) Geçmiş tarama — hafta hafta
       let { backfillCursor, backfillEmptyWeeks = 0, backfillDone = false } = state;
       if (!backfillDone) {
         const cursor = backfillCursor ? new Date(backfillCursor) : addDays(base, -FORWARD_PAST_DAYS);
         const from = addDays(cursor, -7 * BACKFILL_WEEKS_PER_RUN);
-        const back = await execute(fetchDentsoftCalendarRanges, [target.baseUrl, weekRanges(from, cursor), fetchOptions()]);
-        if (back?.ok) {
-          const processed = await processChunks(providerId, back.chunks);
-          const result = await sendChanged(providerId, processed.doctors, processed.appointments);
-          for (const count of [...processed.perChunkCounts].reverse()) {
+        const back = await pullAndSendWeeks(providerId, execute, target.baseUrl, weekRanges(from, cursor), updateStatus, {
+          ...state, ...status, phase: 'backfill', backfillCursor, backfillEmptyWeeks, backfillDone,
+        });
+        status.backfillLastResult = { ...back.totals, sent: back.totals.inserted + back.totals.updated };
+        if (back.sessionExpired) {
+          status.lastError = back.lastError;
+        } else if (back.seen > 0 || !back.lastError) {
+          for (const count of [...back.perChunkCounts].reverse()) {
             backfillEmptyWeeks = count ? 0 : backfillEmptyWeeks + 1;
           }
           backfillCursor = from.toISOString();
           backfillDone = backfillEmptyWeeks >= BACKFILL_STOP_EMPTY_WEEKS || from <= BACKFILL_FLOOR;
-          status.backfillLastResult = result;
-        } else {
-          status.lastError = back?.reason === 'SESSION_EXPIRED' ? 'Dentsoft oturumu kapalı' : `Geçmiş tarama: ${back?.reason ?? 'HATA'}`;
+        } else if (!status.lastError) {
+          status.lastError = `Geçmiş tarama: ${back.lastError}`;
         }
       }
       await updateStatus(providerId, {
-        calendar: { ...state, ...status, backfillCursor, backfillEmptyWeeks, backfillDone },
+        calendar: { ...state, ...status, backfillCursor, backfillEmptyWeeks, backfillDone, phase: null, progress: null },
       });
       await chrome.storage.local.set({ [stateKey(providerId)]: { backfillCursor, backfillEmptyWeeks, backfillDone } });
     } catch (error) {

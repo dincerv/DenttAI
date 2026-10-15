@@ -153,7 +153,7 @@ $('sync-btn').addEventListener('click', async () => {
   const msg = $('sync-msg');
   btn.disabled = true;
   msg.hidden = false;
-  msg.textContent = 'Senkron çalışıyor… hastalar + takvim randevuları okunuyor, 30–90 sn sürebilir.';
+  msg.textContent = 'Senkron çalışıyor… hastalar + takvim (hafta hafta). İlk sefer 2–4 dk sürebilir; popup’ı kapatma.';
   try {
     const res = await send('SYNC_NOW');
     if (!res?.ok) throw new Error(res?.error || 'Sync başarısız');

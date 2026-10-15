@@ -24,6 +24,7 @@ const TR_OFFSET = '+03:00';
 export async function fetchDentsoftCalendarRanges(baseUrl, ranges, options) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const delayMs = Number(options?.delayMs) || 250;
+  const timeoutMs = Number(options?.timeoutMs) || 15000;
   const loginRe = /\/(login|giris|auth)/i;
   const headers = { Accept: 'application/json, text/javascript, */*; q=0.01', 'X-Requested-With': 'XMLHttpRequest' };
 
@@ -32,15 +33,28 @@ export async function fetchDentsoftCalendarRanges(baseUrl, ranges, options) {
     url.searchParams.set('v', String(options?.v || '66'));
     url.searchParams.set('start', start);
     url.searchParams.set('end', end);
-    const res = await fetch(url.toString(), { credentials: 'include', headers, redirect: 'follow' });
-    if (res.status === 401 || res.status === 403 || loginRe.test(new URL(res.url).pathname)) return { expired: true };
-    if (!res.ok) return { error: `HTTP ${res.status}` };
-    const text = await res.text();
-    if (!text.trim()) return { data: [] };
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
     try {
-      return { data: JSON.parse(text) };
-    } catch {
-      return /type=["']password["']/i.test(text) ? { expired: true } : { error: 'NOT_JSON' };
+      const res = await fetch(url.toString(), {
+        credentials: 'include',
+        headers,
+        redirect: 'follow',
+        signal: ctrl?.signal,
+      });
+      if (res.status === 401 || res.status === 403 || loginRe.test(new URL(res.url).pathname)) return { expired: true };
+      if (!res.ok) return { error: `HTTP ${res.status}` };
+      const text = await res.text();
+      if (!text.trim()) return { data: [] };
+      try {
+        return { data: JSON.parse(text) };
+      } catch {
+        return /type=["']password["']/i.test(text) ? { expired: true } : { error: 'NOT_JSON' };
+      }
+    } catch (e) {
+      return { error: e?.name === 'AbortError' ? 'TIMEOUT' : String(e?.message || e) };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   };
 

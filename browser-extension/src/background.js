@@ -168,13 +168,18 @@ async function resolveTarget(provider) {
 async function executeIn(target, func, args) {
   try {
     if (target.tabId !== null) {
-      const [injection] = await chrome.scripting.executeScript({
+      const results = await chrome.scripting.executeScript({
         target: { tabId: target.tabId },
         world: 'MAIN',
         func,
         args,
       });
-      return injection?.result ?? { ok: false, reason: 'NO_RESULT' };
+      const injection = results?.[0];
+      if (!injection) return { ok: false, reason: 'NO_RESULT', message: 'injection boş — Dentsoft sekmesini yenile' };
+      if (injection.result === undefined || injection.result === null) {
+        return { ok: false, reason: 'NO_RESULT', message: 'sayfa sonuç döndürmedi — takvim sayfasını açık tut' };
+      }
+      return injection.result;
     }
     return await func(...args);
   } catch (error) {
