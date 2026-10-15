@@ -552,7 +552,28 @@ async def _run_import(
                 skipped_duplicates += 1
         await db.flush()
 
-    # Telefonsuz hastaya bağlı randevuları telefonlu adaşına taşı (name+phone unique engeli).
+    # Telefonsuz kayda telefon yaz (unique clash yoksa); olmazsa randevuyu telefonlu adaşa taşı.
+    await db.execute(
+        text("""
+            UPDATE patients AS empty
+            SET phone = twin.phone, updated_at = NOW()
+            FROM patients AS twin
+            WHERE empty.clinic_id = CAST(:cid AS UUID)
+              AND twin.clinic_id = empty.clinic_id
+              AND lower(trim(empty.full_name)) = lower(trim(twin.full_name))
+              AND (empty.phone IS NULL OR BTRIM(empty.phone) = '')
+              AND twin.phone IS NOT NULL AND BTRIM(twin.phone) <> ''
+              AND twin.id <> empty.id
+              AND NOT EXISTS (
+                SELECT 1 FROM patients clash
+                WHERE clash.clinic_id = empty.clinic_id
+                  AND lower(trim(clash.full_name)) = lower(trim(empty.full_name))
+                  AND clash.phone = twin.phone
+                  AND clash.id <> empty.id
+              )
+        """),
+        {"cid": str(clinic_id)},
+    )
     await db.execute(
         text("""
             UPDATE appointments AS a

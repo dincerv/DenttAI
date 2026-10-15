@@ -201,10 +201,24 @@ class _PatientResolver:
                 self.has_ext.add(pid)
                 self.by_ext[external_id] = pid
             if phone:
-                await self.db.execute(
-                    text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID)"),
-                    {"phone": phone, "pid": pid},
+                # Unique (clinic, name, phone) ihlal etmeden doldur; clash varsa telefonlu adaşa geç.
+                upd = await self.db.execute(
+                    text("""
+                        UPDATE patients SET phone = :phone, updated_at = NOW()
+                        WHERE id = CAST(:pid AS UUID)
+                          AND (phone IS NULL OR BTRIM(phone) = '' OR phone = :phone)
+                          AND NOT EXISTS (
+                            SELECT 1 FROM patients clash
+                            WHERE clash.clinic_id = CAST(:cid AS UUID)
+                              AND lower(trim(clash.full_name)) = lower(trim(:name))
+                              AND clash.phone = :phone
+                              AND clash.id <> CAST(:pid AS UUID)
+                          )
+                    """),
+                    {"phone": phone, "pid": pid, "cid": self.cid, "name": name.strip()},
                 )
+                if upd.rowcount == 0:
+                    pid = await self._prefer_phone_twin(pid, name, external_id)
             else:
                 pid = await self._prefer_phone_twin(pid, name, external_id)
             return pid
