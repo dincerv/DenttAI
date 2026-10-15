@@ -223,6 +223,14 @@ async function runPeriodic(provider) {
 async function syncAll(trigger) {
   if (!(await isAuthenticated())) return;
   for (const provider of Object.values(PROVIDERS)) {
+    // Sync başlar başlamaz eski takvim hatasını temizle (popup'ta hemen kaybolsun).
+    if (provider.calendar) {
+      const key = statusKey(provider.id);
+      const { [key]: cur = {} } = await chrome.storage.local.get(key);
+      await updateStatus(provider.id, {
+        calendar: { ...(cur.calendar || {}), lastError: null, phase: 'starting', lastRunAt: new Date().toISOString() },
+      });
+    }
     try {
       await runPeriodic(provider);
     } catch (error) {

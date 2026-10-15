@@ -100,13 +100,23 @@ function addTotals(into, result) {
   return into;
 }
 
+function isRetryableImportError(error) {
+  if (error instanceof ValidationError) return true;
+  const msg = String(error?.message || error);
+  return /HTTP 502|HTTP 503|HTTP 504|Failed to fetch|NetworkError|Load failed/i.test(msg);
+}
+
 async function sendBatch(providerId, doctors, batch) {
   try {
     return await importAppointments({ source: providerId, doctors, appointments: batch });
   } catch (error) {
-    if (!(error instanceof ValidationError)) throw error;
-    if (batch.length === 1) return { ...emptyTotals(), skipped_invalid: 1 };
+    if (!isRetryableImportError(error)) throw error;
+    if (batch.length === 1) {
+      // Tek kayıt bile 502 ise atla; tüm sync'i düşürme.
+      return { ...emptyTotals(), skipped_invalid: 1 };
+    }
     const mid = Math.ceil(batch.length / 2);
+    await new Promise((r) => setTimeout(r, 800));
     const left = await sendBatch(providerId, doctors, batch.slice(0, mid));
     const right = await sendBatch(providerId, doctors, batch.slice(mid));
     return addTotals(addTotals(emptyTotals(), left), right);
@@ -287,7 +297,10 @@ export function runCalendarSync(provider, target, execute, updateStatus) {
     const providerId = provider.id;
     const { [stateKey(providerId)]: state = {} } = await chrome.storage.local.get(stateKey(providerId));
     const base = today();
-    const status = { lastRunAt: new Date().toISOString(), lastError: null };
+    const status = { lastRunAt: new Date().toISOString(), lastError: null, phase: 'starting' };
+
+    // Eski 502 satırını hemen temizle — hasta sync sürerken eski hata görünmesin.
+    await updateStatus(providerId, { calendar: { ...state, ...status } });
 
     try {
       // 1) İleri pencere — hafta hafta
@@ -300,15 +313,19 @@ export function runCalendarSync(provider, target, execute, updateStatus) {
         await updateStatus(providerId, { calendar: { ...state, ...status } });
         return;
       }
-      if (fwd.lastError && !fwd.seen) {
+      // Hafta bazlı NO_RESULT vb. kısmi hata — başarı varsa ana hata sayma.
+      if (fwd.lastError && fwd.totals.inserted + fwd.totals.updated === 0 && !fwd.seen) {
         status.lastError = fwd.lastError;
       }
 
-      // Hasta kartı (Patient/Index) — telefon, TC, adres vb.
+      // Hasta kartı (Patient/Index) — randevu import'undan SONRA, hata takvimi düşürmesin.
       if (fwd.patientIds?.length && !fwd.sessionExpired) {
-        const enrich = await enrichPatientsFromCards(providerId, execute, target.baseUrl, fwd.patientIds, updateStatus);
-        status.patientsEnriched = enrich.enriched;
-        if (enrich.error && !status.lastError) status.lastError = enrich.error;
+        try {
+          const enrich = await enrichPatientsFromCards(providerId, execute, target.baseUrl, fwd.patientIds, updateStatus);
+          status.patientsEnriched = enrich.enriched;
+        } catch {
+          /* kart zenginleştirme opsiyonel */
+        }
       }
 
       // 2) Geçmiş tarama — hafta hafta
