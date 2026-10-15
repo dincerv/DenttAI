@@ -17,14 +17,18 @@ export const apiClient = axios.create({
 });
 
 let csrfToken: string | null = null;
+let csrfFetchedAt = 0;
+// Backend CSRF token ömrü 1 saat; süresi dolmadan yenile.
+const CSRF_MAX_AGE_MS = 45 * 60 * 1000;
 
-async function ensureCsrfToken(): Promise<void> {
-  if (csrfToken) return;
+async function ensureCsrfToken(force = false): Promise<void> {
+  if (!force && csrfToken && Date.now() - csrfFetchedAt < CSRF_MAX_AGE_MS) return;
   try {
     const res = await axios.get(`${BASE_URL}/auth/health`, { withCredentials: true });
     const raw = (res.headers['x-csrf-token'] as string | undefined) ?? null;
     // Middleware kapalıyken eski "disabled" değeri doğrulamada 403 üretir — yok say.
     csrfToken = raw && raw !== 'disabled' ? raw : null;
+    csrfFetchedAt = Date.now();
   } catch {
     // CSRF bootstrap başarısızsa login'i engelleme (Bearer istekler zaten muaf)
     csrfToken = null;
@@ -66,7 +70,12 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry && typeof window !== 'undefined') {
+    // FastAPI HTTPBearer, Authorization başlığı yoksa 401 yerine 403 "Not authenticated" döner.
+    const isMissingAuth = error.response?.status === 403
+      && (error.response.data as { detail?: string } | undefined)?.detail === 'Not authenticated';
+    const isAuthError = error.response?.status === 401 || isMissingAuth;
+
+    if (isAuthError && !originalRequest._retry && typeof window !== 'undefined') {
 
       // Eş zamanlı birden fazla istek 401 alırsa yalnızca bir refresh yapılır
       if (_isRefreshing) {
@@ -82,7 +91,7 @@ apiClient.interceptors.response.use(
       _isRefreshing = true;
 
       try {
-        await ensureCsrfToken();
+        await ensureCsrfToken(true);
         const refreshHeaders = csrfToken ? { 'X-CSRF-Token': csrfToken } : undefined;
         const res = await axios.post(
           `${BASE_URL}/auth/refresh`,
