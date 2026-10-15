@@ -552,6 +552,22 @@ async def _run_import(
                 skipped_duplicates += 1
         await db.flush()
 
+    # Aynı isimli telefonsuz kayıtlara telefonu yay (randevu ↔ hasta kartı çiftleri).
+    await db.execute(
+        text("""
+            UPDATE patients AS target
+            SET phone = twin.phone, updated_at = NOW()
+            FROM patients AS twin
+            WHERE target.clinic_id = CAST(:cid AS UUID)
+              AND twin.clinic_id = target.clinic_id
+              AND lower(trim(target.full_name)) = lower(trim(twin.full_name))
+              AND (target.phone IS NULL OR target.phone = '')
+              AND twin.phone IS NOT NULL AND BTRIM(twin.phone) <> ''
+              AND twin.id <> target.id
+        """),
+        {"cid": str(clinic_id)},
+    )
+
     await db.commit()
     logger.info(
         "Patient import tamamlandı",

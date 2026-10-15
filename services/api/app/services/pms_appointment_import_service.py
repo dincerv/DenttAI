@@ -152,13 +152,17 @@ class _PatientResolver:
             )
             hit = row.mappings().first()
             if hit:
-                self._remember(str(hit["id"]), hit["full_name"] or "", hit["phone"], hit["external_id"])
+                pid = str(hit["id"])
+                self._remember(pid, hit["full_name"] or "", hit["phone"], hit["external_id"])
                 if phone:
                     await self.db.execute(
                         text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID)"),
-                        {"phone": phone, "pid": str(hit["id"])},
+                        {"phone": phone, "pid": pid},
                     )
-                return str(hit["id"])
+                elif not hit["phone"]:
+                    # Aynı isimli başka kayıtta telefon varsa kopyala (çift hasta sorunu).
+                    await self._copy_phone_from_name_twin(pid, name)
+                return pid
 
         pid = self.by_key.get(_patient_key(name, phone))
         if not pid:
@@ -202,6 +206,8 @@ class _PatientResolver:
                     text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID)"),
                     {"phone": phone, "pid": pid},
                 )
+            else:
+                await self._copy_phone_from_name_twin(pid, name)
             return pid
 
         row = await self.db.execute(
@@ -215,7 +221,30 @@ class _PatientResolver:
         pid = str(row.scalar())
         self.result.patients_created += 1
         self._remember(pid, name, phone, external_id)
+        if not phone:
+            await self._copy_phone_from_name_twin(pid, name)
         return pid
+
+    async def _copy_phone_from_name_twin(self, pid: str, name: str) -> None:
+        """Aynı klinikte aynı isimli telefonsuz kayda, telefonlu eşinden kopyala."""
+        row = await self.db.execute(
+            text("""
+                UPDATE patients AS target
+                SET phone = twin.phone
+                FROM patients AS twin
+                WHERE target.id = CAST(:pid AS UUID)
+                  AND twin.clinic_id = CAST(:cid AS UUID)
+                  AND lower(trim(twin.full_name)) = lower(trim(:name))
+                  AND twin.phone IS NOT NULL AND twin.phone <> ''
+                  AND (target.phone IS NULL OR target.phone = '')
+                  AND twin.id <> target.id
+                RETURNING target.phone
+            """),
+            {"pid": pid, "cid": self.cid, "name": name.strip()},
+        )
+        phone = row.scalar()
+        if phone:
+            self.by_key[_patient_key(name, phone)] = pid
 
 
 async def import_pms_appointments(
