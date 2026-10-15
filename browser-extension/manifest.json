@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DentAI Flow — PMS Sync",
   "short_name": "DentAI Sync",
-  "version": "0.1.1",
+  "version": "0.3.3",
   "description": "Dentsoft / Dr.DENTES oturumunuzdan (salt okuma) hasta kayıtlarını DentAI Flow'a senkronize eder.",
   "minimum_chrome_version": "111",
   "permissions": ["storage", "alarms", "scripting"],

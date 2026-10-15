@@ -105,13 +105,14 @@ async function sendBatch(providerId, batch) {
     if (!(error instanceof ValidationError)) throw error;
     if (batch.length === 1) {
       await recordDeadLetter(providerId, error.detail ?? error.message, 1);
-      return { inserted: 0, skipped_duplicates: 0, skipped_invalid: 1 };
+      return { inserted: 0, updated: 0, skipped_duplicates: 0, skipped_invalid: 1 };
     }
     const mid = Math.ceil(batch.length / 2);
     const left = await sendBatch(providerId, batch.slice(0, mid));
     const right = await sendBatch(providerId, batch.slice(mid));
     return {
       inserted: (left.inserted || 0) + (right.inserted || 0),
+      updated: (left.updated || 0) + (right.updated || 0),
       skipped_duplicates: (left.skipped_duplicates || 0) + (right.skipped_duplicates || 0),
       skipped_invalid: (left.skipped_invalid || 0) + (right.skipped_invalid || 0),
     };
@@ -120,13 +121,14 @@ async function sendBatch(providerId, batch) {
 
 function flushQueue(providerId) {
   return withLock(`flush:${providerId}`, async () => {
-    const totals = { inserted: 0, skipped_duplicates: 0, skipped_invalid: 0 };
+    const totals = { inserted: 0, updated: 0, skipped_duplicates: 0, skipped_invalid: 0 };
     try {
       for (;;) {
         const batch = await peekQueue(providerId, BATCH_SIZE);
         if (!batch.length) break;
         const result = await sendBatch(providerId, batch);
         totals.inserted += result.inserted || 0;
+        totals.updated += result.updated || 0;
         totals.skipped_duplicates += result.skipped_duplicates || 0;
         totals.skipped_invalid += result.skipped_invalid || 0;
         await removeFromQueue(providerId, batch.map((item) => item.h));
@@ -230,14 +232,27 @@ async function handleContentMessage(message, sender) {
     if (!provider.interceptUrlPatterns.some((src) => new RegExp(src, 'i').test(message.url))) return { ok: false };
     if (providerForUrl(message.url)?.id !== provider.id) return { ok: false };
 
-    let json;
+    let payload;
     try {
-      json = JSON.parse(message.body);
+      payload = JSON.parse(message.body);
     } catch {
       return { ok: false };
     }
-    await chrome.storage.local.set({ [originKey(provider.id)]: new URL(sender.url).origin });
-    const result = await ingest(provider, json, 'intercept');
+
+    const origin = new URL(sender.url).origin;
+    await chrome.storage.local.set({ [originKey(provider.id)]: origin });
+
+    // SearchList yakalandıysa TC eksik kayıtlar için kart sayfasını sessizce oku.
+    if (provider.enrichItems && /\/Patient\/SearchList/i.test(message.url)) {
+      try {
+        const items = provider.extractItems(payload);
+        payload = await provider.enrichItems(origin, items, provider.periodicOptions || {});
+      } catch {
+        /* enrich başarısızsa ham listeyle devam */
+      }
+    }
+
+    const result = await ingest(provider, payload, 'intercept');
     if (result.queued) flushQueue(provider.id);
     return { ok: true, ...result };
   }

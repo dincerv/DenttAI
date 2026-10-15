@@ -37,8 +37,12 @@ function renderProviders(providers) {
       <div class="name">${p.label} ${sessionBadge(p)}</div>
       <div class="stats">
         Kuyruk: ${p.queued ?? 0}
+        · Alınan: ${p.lastReceived ?? '—'}
+        · Yeni: ${p.lastQueued ?? '—'}
         · Son alım: ${formatTime(p.lastIngestAt)}
         · Son gönderim: ${formatTime(p.lastFlushAt)}
+        ${p.lastFlushResult ? `<br>DentAI: +${p.lastFlushResult.inserted ?? 0} / güncelle ${p.lastFlushResult.updated ?? 0}` : ''}
+        ${p.lastSource ? `<br>Kaynak: ${p.lastSource}` : ''}
         ${p.lastError ? `<br>Hata: ${p.lastError}` : ''}
         ${p.lastPeriodicError ? `<br>Çekim: ${p.lastPeriodicError}` : ''}
       </div>
@@ -116,12 +120,18 @@ $('sync-btn').addEventListener('click', async () => {
   const msg = $('sync-msg');
   btn.disabled = true;
   msg.hidden = false;
-  msg.textContent = 'Senkron çalışıyor… (Dentsoft sekmesi açık olmalı)';
+  msg.textContent = 'Senkron çalışıyor… SearchList + kart detayları (TC) okunuyor, 10–30 sn sürebilir.';
   try {
     const res = await send('SYNC_NOW');
     if (!res?.ok) throw new Error(res?.error || 'Sync başarısız');
-    msg.textContent = 'Tamamlandı';
     await refresh();
+    const dentsoft = (await send('GET_STATUS'))?.providers?.find((p) => p.id === 'dentsoft');
+    const received = dentsoft?.lastReceived ?? 0;
+    const queued = dentsoft?.lastQueued ?? 0;
+    msg.textContent =
+      queued > 0
+        ? `Tamamlandı: ${received} kişi okundu, ${queued} yeni kuyruğa alındı.`
+        : `Tamamlandı: ${received} kişi okundu, yeni yok (hepsi daha önce eklenmiş).`;
   } catch (e) {
     msg.textContent = String(e.message || e);
   } finally {
