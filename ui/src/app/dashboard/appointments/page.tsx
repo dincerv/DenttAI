@@ -454,7 +454,7 @@ function AppointmentDetail({
                 </>
               ) : (
                 <p className="text-base font-semibold text-blue-950">
-                  {appt.type || 'İşlem tipi girilmemiş'}
+                  {displayTreatmentAndNotes(appt).treatment || 'İşlem tipi girilmemiş'}
                 </p>
               )}
             </div>
@@ -600,10 +600,10 @@ function AppointmentDetail({
             </div>
           </div>
 
-          {appt.notes && (
+          {displayTreatmentAndNotes(appt).note && (
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Notlar</p>
-              <p className="text-sm text-slate-700">{appt.notes}</p>
+              <p className="text-sm text-slate-700">{displayTreatmentAndNotes(appt).note}</p>
             </div>
           )}
 
@@ -985,6 +985,18 @@ function computeOverlapLayout(appts: Appointment[]): LayoutInfo[] {
   return result;
 }
 
+/** Eski sync hatalarını (type="1", notes="| Protez | 2 ÜYE") ekranda düzelt. */
+function displayTreatmentAndNotes(appt: Appointment): { treatment: string | null; note: string | null } {
+  const rawType = appt.type?.trim() || '';
+  const rawNotes = appt.notes?.trim() || '';
+  const typeIsCode = !rawType || /^\d+$/.test(rawType);
+  const scraps = rawNotes.split('|').map((s) => s.trim()).filter(Boolean);
+  if (typeIsCode && scraps.length) {
+    return { treatment: scraps[0] || null, note: scraps.slice(1).join(' | ') || null };
+  }
+  return { treatment: rawType || null, note: rawNotes || null };
+}
+
 /* ── Appointment block — Dentsoft: Hasta | Tedavi | Not + hekim ─ */
 function ApptBlock({
   appt, colorIdx, onClick, colIndex = 0, colCount = 1,
@@ -1002,8 +1014,7 @@ function ApptBlock({
   const leftPct = colIndex * widthPct;
 
   const patientLine = appt.patient_name ?? 'Hasta';
-  const treatment = appt.type?.trim() || null;
-  const note = appt.notes?.trim() || null;
+  const { treatment, note } = displayTreatmentAndNotes(appt);
   const doctor = appt.doctor_name?.trim() || null;
   const phone = appt.patient_phone?.trim() || null;
 

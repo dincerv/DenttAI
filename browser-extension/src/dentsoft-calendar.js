@@ -234,10 +234,33 @@ export function normalizeEvent(item, doctorsById) {
   const rawId = pick(raw, ['id', 'ID', 'Id', 'AppointmentID', 'AppointmentId', 'appointmentId', 'EventID']);
   const externalId = rawId !== null ? String(rawId) : `${doctorId ?? '-'}|${start}|${patientId ?? patientName}`;
 
-  const treatment = clean(pick(raw, ['TreatmentName', 'Treatment', 'AppointmentType', 'AppointmentTypeName', 'TypeName']) ?? titleParts[1], 100);
+  // Dentsoft kutusu: "Hasta | Tedavi | Not" — title birincil kaynak.
+  // AppointmentType çoğu zaman sayısal kod ("1"); bunu tedavi sanma.
+  const fieldTreatment = clean(pick(raw, ['TreatmentName', 'Treatment', 'AppointmentTypeName', 'TypeName', 'ProcedureName']), 100);
+  const titleTreatment = titleParts[1] ? clean(titleParts[1], 100) : null;
+  const treatment = meaningfulText(fieldTreatment) || meaningfulText(titleTreatment);
+
+  const fieldNotes = clean(pick(raw, ['Note', 'Notes', 'Description', 'description', 'AppointmentNote']), 2000);
+  const titleNotes = titleParts.length > 2 ? clean(titleParts.slice(2).join(' | '), 2000) : null;
+  let baseNotes = meaningfulText(fieldNotes) || meaningfulText(titleNotes);
+  // Yanlış parse: "| Protez | 2 ÜYE" → tedavi Protez, not 2 ÜYE
+  if (!treatment && baseNotes && /\|/.test(baseNotes)) {
+    const scraps = baseNotes.split('|').map((s) => s.trim()).filter(Boolean);
+    if (scraps.length) {
+      baseNotes = scraps.slice(1).join(' | ') || null;
+    }
+  }
+  const recoveredTreatment = treatment || (() => {
+    const scraps = String(fieldNotes || titleNotes || '').split('|').map((s) => s.trim()).filter(Boolean);
+    return scraps.find((s) => !/^\d+$/.test(s) && s.length > 1) || null;
+  })();
+  if (!treatment && recoveredTreatment && baseNotes) {
+    const scraps = baseNotes.split('|').map((s) => s.trim()).filter(Boolean);
+    baseNotes = scraps.filter((s) => s !== recoveredTreatment).join(' | ') || null;
+  }
+
   const statusLabel = statusText !== null ? stripHtml(statusText) : '';
   const tags = statusTags(`${statusLabel} ${titleParts.join(' ')}`);
-  const baseNotes = clean(pick(raw, ['Note', 'Notes', 'Description', 'description', 'AppointmentNote']) ?? titleParts.slice(2).join(' | '), 2000);
   const tagPrefix = tags.length ? `[${tags.join(', ')}]` : '';
   const notes = clean([tagPrefix, baseNotes].filter(Boolean).join(' ').trim(), 2000);
   const isNew =
@@ -256,11 +279,133 @@ export function normalizeEvent(item, doctorsById) {
     patient_external_id: patientId !== null ? String(patientId).slice(0, 128) : null,
     patient_name: patientName,
     patient_phone: clean(pick(raw, ['ContactMobile', 'PatientPhone', 'Phone', 'phone', 'Gsm', 'Mobile', 'ContactPhone', 'CepTelefon']), 20),
-    treatment,
+    treatment: clean(recoveredTreatment || treatment, 100),
     notes,
     status: mapStatus(statusLabel) ?? 'scheduled',
     is_new_patient: isNew === null ? false : isNew,
   };
+}
+
+/** Sayısal kod / boş / anlamsız değerleri ele. */
+function meaningfulText(value) {
+  if (!value) return null;
+  const t = String(value).trim().replace(/^\|+\s*/, '').replace(/\s*\|+$/, '').trim();
+  if (!t || /^\d+$/.test(t)) return null;
+  return t;
+}
+
+/**
+ * Patient/Index kartından profil alanlarını okur — MAIN world, self-contained.
+ * patientIds: Dentsoft hasta kimlikleri (URL path segmenti).
+ */
+export async function fetchDentsoftPatientCards(baseUrl, patientIds, options) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const delayMs = Number(options?.delayMs) || 180;
+  const max = Math.min(patientIds.length, Number(options?.max) || 40);
+  const loginRe = /\/(login|giris|auth)/i;
+
+  const parseCard = (html) => {
+    const field = (name) => {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      let m = html.match(new RegExp(`name=["']${esc}["'][^>]*value=["']([^"']*)["']`, 'i'));
+      if (m?.[1]?.trim()) return m[1].trim();
+      m = html.match(new RegExp(`value=["']([^"']*)["'][^>]*name=["']${esc}["']`, 'i'));
+      return m?.[1]?.trim() || null;
+    };
+    const selectVal = (name) => {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const block = html.match(new RegExp(`<select[^>]*name=["']${esc}["'][^>]*>([\\s\\S]*?)<\\/select>`, 'i'));
+      if (!block) return null;
+      let m = block[1].match(/<option[^>]*selected[^>]*value=["']([^"']*)["']/i);
+      if (m?.[1]?.trim()) return m[1].trim();
+      m = block[1].match(/<option[^>]*value=["']([^"']*)["'][^>]*selected/i);
+      return m?.[1]?.trim() || null;
+    };
+    const first = (...vals) => vals.find((v) => v !== null && v !== undefined && String(v).trim() !== '') ?? null;
+    return {
+      firstName: field('PatientFirstName'),
+      lastName: field('PatientLastName'),
+      nationalId: field('PatientNumber'),
+      phone: first(field('ContactMobile'), field('ContactPhone')),
+      email: first(field('ContactEmail'), field('Email')),
+      birthDate: first(field('PatientBirthDate'), field('BirthDate')),
+      sex: first(field('PatientSex'), selectVal('PatientSex')),
+      address: first(field('Address'), field('Adres')),
+      city: first(field('City'), field('Il'), selectVal('City')),
+      district: first(field('District'), field('Ilce'), selectVal('District')),
+      country: first(field('Country'), field('Ulke')),
+      occupation: first(field('PatientJob'), field('Job')),
+      nationality: first(field('PatientNationality'), field('Uyruk')),
+      bloodType: first(field('BloodGroup'), selectVal('BloodGroup')),
+      fileNumber: first(field('FileNo'), field('PatientFileNo')),
+      archiveNumber: first(field('ArchiveID'), field('ArchiveNo')),
+      insuranceType: first(field('InsuranceType'), selectVal('InsuranceType')),
+      insuranceProvider: first(field('CompanyName'), field('InsuranceProvider')),
+    };
+  };
+
+  const mapSex = (raw) => {
+    const v = String(raw ?? '').trim().toLowerCase();
+    if (['1', 'f', 'female', 'kadin', 'kadın', 'k'].includes(v)) return 'female';
+    if (['0', '2', 'm', 'male', 'erkek', 'e'].includes(v)) return 'male';
+    return v ? 'unknown' : null;
+  };
+  const mapInsurance = (raw) => {
+    const v = String(raw ?? '').trim().toLowerCase();
+    if (/(sgk|bagkur|ba[gğ]kur|emekli)/i.test(v)) return 'sgk';
+    if (/(ozel|özel|private)/i.test(v)) return 'private';
+    if (/(karma|mixed)/i.test(v)) return 'mixed';
+    if (/(yok|none)/i.test(v)) return 'none';
+    return null;
+  };
+
+  const patients = [];
+  const seen = new Set();
+  for (const id of patientIds) {
+    if (patients.length >= max) break;
+    const key = String(id);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const url = new URL(`/Patient/Index/${encodeURIComponent(key)}`, baseUrl).toString();
+      const res = await fetch(url, { credentials: 'include', redirect: 'follow' });
+      if (res.status === 401 || res.status === 403 || loginRe.test(new URL(res.url).pathname)) {
+        return { ok: false, reason: 'SESSION_EXPIRED', patients };
+      }
+      if (!res.ok) continue;
+      const html = await res.text();
+      if (/type=["']password["']/i.test(html) && /frmGiris|login/i.test(html)) {
+        return { ok: false, reason: 'SESSION_EXPIRED', patients };
+      }
+      const card = parseCard(html);
+      const fullName = [card.firstName, card.lastName].filter(Boolean).join(' ').trim();
+      if (!fullName || fullName.length < 2) continue;
+      patients.push({
+        full_name: fullName.slice(0, 255),
+        phone: card.phone ? String(card.phone).slice(0, 20) : null,
+        email: card.email ? String(card.email).slice(0, 255) : null,
+        national_id: card.nationalId ? String(card.nationalId).replace(/\D/g, '').slice(0, 11) : null,
+        birth_date: card.birthDate ? String(card.birthDate).slice(0, 16) : null,
+        sex: mapSex(card.sex),
+        address: card.address ? String(card.address).slice(0, 500) : null,
+        city: card.city ? String(card.city).slice(0, 100) : null,
+        district: card.district ? String(card.district).slice(0, 100) : null,
+        country: card.country ? String(card.country).slice(0, 100) : null,
+        occupation: card.occupation ? String(card.occupation).slice(0, 100) : null,
+        nationality: card.nationality ? String(card.nationality).slice(0, 100) : null,
+        blood_type: card.bloodType ? String(card.bloodType).slice(0, 20) : null,
+        file_number: card.fileNumber ? String(card.fileNumber).slice(0, 64) : null,
+        archive_number: card.archiveNumber ? String(card.archiveNumber).slice(0, 64) : null,
+        insurance_type: mapInsurance(card.insuranceType),
+        insurance_provider: card.insuranceProvider ? String(card.insuranceProvider).slice(0, 100) : null,
+        external_id: key.slice(0, 128),
+      });
+    } catch {
+      /* tek hasta hatası */
+    }
+    await sleep(delayMs);
+  }
+  return { ok: true, patients };
 }
 
 export function normalizeCalendar(doctorsJson, eventsJson) {

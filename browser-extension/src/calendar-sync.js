@@ -10,7 +10,7 @@
  * calendarShape:<provider> = alan adları/tipleri (PII yok) — eşleme doğrulaması için popup'tan kopyalanır.
  */
 
-import { AuthError, ValidationError, importAppointments } from './dentai-client.js';
+import { AuthError, ValidationError, importAppointments, importPatients } from './dentai-client.js';
 import {
   APPOINTMENT_LIST_PATH,
   APPOINTMENT_LIST_RE,
@@ -19,6 +19,7 @@ import {
   addDays,
   describeCalendarShape,
   fetchDentsoftCalendarRanges,
+  fetchDentsoftPatientCards,
   normalizeDoctors,
   normalizeEvent,
   weekRanges,
@@ -38,6 +39,7 @@ const stateKey = (id) => `calendar:${id}`;
 const sentKey = (id) => `calendarSent:${id}`;
 const shapeKey = (id) => `calendarShape:${id}`;
 const doctorsKey = (id) => `calendarDoctors:${id}`;
+const enrichedPatientsKey = (id) => `calendarPatientsEnriched:${id}`;
 
 const locks = new Map();
 function withLock(key, fn) {
@@ -80,7 +82,13 @@ export async function getCalendarShape(providerId) {
 }
 
 export async function resetCalendar(providerId) {
-  await chrome.storage.local.remove([stateKey(providerId), sentKey(providerId), shapeKey(providerId), doctorsKey(providerId)]);
+  await chrome.storage.local.remove([
+    stateKey(providerId),
+    sentKey(providerId),
+    shapeKey(providerId),
+    doctorsKey(providerId),
+    enrichedPatientsKey(providerId),
+  ]);
 }
 
 // ── Gönderim ──────────────────────────────────────────────────────────────
@@ -196,6 +204,7 @@ async function pullAndSendWeeks(providerId, execute, baseUrl, ranges, updateStat
   let lastError = null;
   let sessionExpired = false;
   const perChunkCounts = [];
+  const patientIds = new Set();
 
   for (let i = 0; i < ranges.length; i++) {
     const week = await fetchWeek(execute, baseUrl, ranges[i]);
@@ -213,6 +222,9 @@ async function pullAndSendWeeks(providerId, execute, baseUrl, ranges, updateStat
     const processed = await processChunks(providerId, week.chunks || []);
     seen += processed.appointments.length;
     perChunkCounts.push(...processed.perChunkCounts);
+    for (const a of processed.appointments) {
+      if (a.patient_external_id) patientIds.add(a.patient_external_id);
+    }
     if (processed.appointments.length || processed.doctors.length) {
       addTotals(totals, await sendChanged(providerId, processed.doctors, processed.appointments));
     }
@@ -222,7 +234,41 @@ async function pullAndSendWeeks(providerId, execute, baseUrl, ranges, updateStat
       });
     }
   }
-  return { totals, seen, lastError, sessionExpired, perChunkCounts };
+  return { totals, seen, lastError, sessionExpired, perChunkCounts, patientIds: [...patientIds] };
+}
+
+/** Randevudaki hasta kimlikleri için Patient/Index kartını okuyup DentAI'ye yazar. */
+async function enrichPatientsFromCards(providerId, execute, baseUrl, patientIds, updateStatus) {
+  if (!patientIds?.length) return { enriched: 0 };
+  const key = enrichedPatientsKey(providerId);
+  const { [key]: done = {} } = await chrome.storage.local.get(key);
+  const pending = patientIds.filter((id) => !done[id]).slice(0, 40);
+  if (!pending.length) return { enriched: 0 };
+
+  const res = await withTimeout(
+    execute(fetchDentsoftPatientCards, [baseUrl, pending, { delayMs: 180, max: 40 }]),
+    120000,
+    'TIMEOUT',
+  );
+  if (!res?.ok || !res.patients?.length) {
+    if (res?.reason === 'SESSION_EXPIRED') return { enriched: 0, error: 'Dentsoft oturumu kapalı' };
+    return { enriched: 0, error: res?.reason || null };
+  }
+  try {
+    await importPatients(res.patients);
+    for (const p of res.patients) {
+      if (p.external_id) done[p.external_id] = new Date().toISOString();
+    }
+    const keys = Object.keys(done);
+    if (keys.length > 8000) {
+      for (const k of keys.slice(0, keys.length - 8000)) delete done[k];
+    }
+    await chrome.storage.local.set({ [key]: done });
+    await updateStatus(providerId, { calendarPatients: { at: new Date().toISOString(), enriched: res.patients.length } });
+    return { enriched: res.patients.length };
+  } catch (error) {
+    return { enriched: 0, error: String(error?.message || error) };
+  }
 }
 
 /**
@@ -250,6 +296,13 @@ export function runCalendarSync(provider, target, execute, updateStatus) {
         status.lastError = fwd.lastError;
       }
 
+      // Hasta kartı (Patient/Index) — telefon, TC, adres vb.
+      if (fwd.patientIds?.length && !fwd.sessionExpired) {
+        const enrich = await enrichPatientsFromCards(providerId, execute, target.baseUrl, fwd.patientIds, updateStatus);
+        status.patientsEnriched = enrich.enriched;
+        if (enrich.error && !status.lastError) status.lastError = enrich.error;
+      }
+
       // 2) Geçmiş tarama — hafta hafta
       let { backfillCursor, backfillEmptyWeeks = 0, backfillDone = false } = state;
       if (!backfillDone) {
@@ -267,6 +320,9 @@ export function runCalendarSync(provider, target, execute, updateStatus) {
           }
           backfillCursor = from.toISOString();
           backfillDone = backfillEmptyWeeks >= BACKFILL_STOP_EMPTY_WEEKS || from <= BACKFILL_FLOOR;
+          if (back.patientIds?.length) {
+            await enrichPatientsFromCards(providerId, execute, target.baseUrl, back.patientIds, updateStatus);
+          }
         } else if (!status.lastError) {
           status.lastError = `Geçmiş tarama: ${back.lastError}`;
         }
