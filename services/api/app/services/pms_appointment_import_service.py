@@ -160,8 +160,7 @@ class _PatientResolver:
                         {"phone": phone, "pid": pid},
                     )
                 elif not hit["phone"]:
-                    # Aynı isimli başka kayıtta telefon varsa kopyala (çift hasta sorunu).
-                    await self._copy_phone_from_name_twin(pid, name)
+                    pid = await self._prefer_phone_twin(pid, name, external_id)
                 return pid
 
         pid = self.by_key.get(_patient_key(name, phone))
@@ -207,7 +206,7 @@ class _PatientResolver:
                     {"phone": phone, "pid": pid},
                 )
             else:
-                await self._copy_phone_from_name_twin(pid, name)
+                pid = await self._prefer_phone_twin(pid, name, external_id)
             return pid
 
         row = await self.db.execute(
@@ -222,29 +221,51 @@ class _PatientResolver:
         self.result.patients_created += 1
         self._remember(pid, name, phone, external_id)
         if not phone:
-            await self._copy_phone_from_name_twin(pid, name)
+            pid = await self._prefer_phone_twin(pid, name, external_id)
         return pid
 
-    async def _copy_phone_from_name_twin(self, pid: str, name: str) -> None:
-        """Aynı klinikte aynı isimli telefonsuz kayda, telefonlu eşinden kopyala."""
+    async def _prefer_phone_twin(self, pid: str, name: str, external_id: str | None) -> str:
+        """Telefonsuz kayıt yerine aynı isimli telefonlu kaydı kullan; randevuları taşı."""
         row = await self.db.execute(
             text("""
-                UPDATE patients AS target
-                SET phone = twin.phone
-                FROM patients AS twin
-                WHERE target.id = CAST(:pid AS UUID)
-                  AND twin.clinic_id = CAST(:cid AS UUID)
-                  AND lower(trim(twin.full_name)) = lower(trim(:name))
-                  AND twin.phone IS NOT NULL AND twin.phone <> ''
-                  AND (target.phone IS NULL OR target.phone = '')
-                  AND twin.id <> target.id
-                RETURNING target.phone
+                SELECT id, phone, external_id FROM patients
+                WHERE clinic_id = CAST(:cid AS UUID)
+                  AND lower(trim(full_name)) = lower(trim(:name))
+                  AND phone IS NOT NULL AND BTRIM(phone) <> ''
+                  AND id <> CAST(:pid AS UUID)
+                ORDER BY updated_at DESC NULLS LAST
+                LIMIT 1
             """),
-            {"pid": pid, "cid": self.cid, "name": name.strip()},
+            {"cid": self.cid, "name": name.strip(), "pid": pid},
         )
-        phone = row.scalar()
-        if phone:
-            self.by_key[_patient_key(name, phone)] = pid
+        twin = row.mappings().first()
+        if not twin:
+            return pid
+        twin_id = str(twin["id"])
+        # external_id telefonlu kayda geçsin (sonraki sync doğru kişiyi bulsun)
+        if external_id and not twin["external_id"]:
+            await self.db.execute(
+                text("""
+                    UPDATE patients SET external_id = :ext
+                    WHERE id = CAST(:tid AS UUID) AND external_id IS NULL
+                """),
+                {"ext": external_id, "tid": twin_id},
+            )
+            await self.db.execute(
+                text("UPDATE patients SET external_id = NULL WHERE id = CAST(:pid AS UUID)"),
+                {"pid": pid},
+            )
+        await self.db.execute(
+            text("""
+                UPDATE appointments SET patient_id = CAST(:tid AS UUID), updated_at = NOW()
+                WHERE patient_id = CAST(:pid AS UUID) AND clinic_id = CAST(:cid AS UUID)
+            """),
+            {"tid": twin_id, "pid": pid, "cid": self.cid},
+        )
+        self._remember(twin_id, name, twin["phone"], twin["external_id"] or external_id)
+        if external_id:
+            self.by_ext[external_id] = twin_id
+        return twin_id
 
 
 async def import_pms_appointments(
