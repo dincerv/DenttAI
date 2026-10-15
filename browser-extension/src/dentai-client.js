@@ -163,6 +163,12 @@ async function postImport(path, payload) {
   let res = await post(await getAccessToken());
   if (res.status === 401) res = await post(await getAccessToken({ force: true }));
 
+  // Railway proxy zaman aşımı / transient 502 — birkaç kez dene.
+  for (let attempt = 0; attempt < 3 && (res.status === 502 || res.status === 503 || res.status === 504); attempt++) {
+    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    res = await post(await getAccessToken());
+  }
+
   if (res.status === 401 || res.status === 403) throw new AuthError(await errorDetail(res));
   if (res.status === 422) throw new ValidationError('Kayıtlar doğrulanamadı', await errorDetail(res));
   if (!res.ok) throw new Error(`DentAI import başarısız: HTTP ${res.status}`);

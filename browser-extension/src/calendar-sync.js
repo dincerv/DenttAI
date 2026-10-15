@@ -30,7 +30,7 @@ const FORWARD_FUTURE_DAYS = 91;
 const BACKFILL_WEEKS_PER_RUN = 12;
 const BACKFILL_STOP_EMPTY_WEEKS = 104;
 const BACKFILL_FLOOR = new Date(2000, 0, 1);
-const SEND_BATCH = 300;
+const SEND_BATCH = 40;
 const MAX_SENT_ENTRIES = 60000;
 /** Tek haftalık Dentsoft çekimi için üst süre (ms). Aşılırsa sonraki haftaya geçilir. */
 const WEEK_FETCH_TIMEOUT_MS = 20000;
@@ -122,10 +122,18 @@ async function sendChanged(providerId, doctors, appointments) {
     if (sent[appt.external_id] !== h) changed.push({ appt, h });
   }
 
+  const doctorById = new Map((doctors || []).map((d) => [d.external_id, d]));
   const totals = emptyTotals();
   for (let i = 0; i < changed.length; i += SEND_BATCH) {
     const slice = changed.slice(i, i + SEND_BATCH);
-    addTotals(totals, await sendBatch(providerId, doctors, slice.map((x) => x.appt)));
+    const batchAppts = slice.map((x) => x.appt);
+    const needed = new Map();
+    for (const a of batchAppts) {
+      if (a.doctor_external_id && doctorById.has(a.doctor_external_id)) {
+        needed.set(a.doctor_external_id, doctorById.get(a.doctor_external_id));
+      }
+    }
+    addTotals(totals, await sendBatch(providerId, [...needed.values()], batchAppts));
     for (const { appt, h } of slice) {
       delete sent[appt.external_id];
       sent[appt.external_id] = h;
@@ -242,12 +250,12 @@ async function enrichPatientsFromCards(providerId, execute, baseUrl, patientIds,
   if (!patientIds?.length) return { enriched: 0 };
   const key = enrichedPatientsKey(providerId);
   const { [key]: done = {} } = await chrome.storage.local.get(key);
-  const pending = patientIds.filter((id) => !done[id]).slice(0, 40);
+  const pending = patientIds.filter((id) => !done[id]).slice(0, 15);
   if (!pending.length) return { enriched: 0 };
 
   const res = await withTimeout(
-    execute(fetchDentsoftPatientCards, [baseUrl, pending, { delayMs: 180, max: 40 }]),
-    120000,
+    execute(fetchDentsoftPatientCards, [baseUrl, pending, { delayMs: 200, max: 15 }]),
+    60000,
     'TIMEOUT',
   );
   if (!res?.ok || !res.patients?.length) {

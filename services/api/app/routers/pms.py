@@ -8,9 +8,13 @@ Tüm endpoint'ler:
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.adapters.registry import get_adapter, list_providers
 from app.core.database import get_db
@@ -144,7 +148,14 @@ async def import_appointments_from_pms(
     db: AsyncSession = Depends(get_db),
 ) -> PmsAppointmentImportResult:
     await set_rls_context(db, claims["clinic_id"])
-    return await import_pms_appointments(body, clinic_id=claims["clinic_id"], db=db)
+    try:
+        return await import_pms_appointments(body, clinic_id=claims["clinic_id"], db=db)
+    except Exception as exc:  # noqa: BLE001 — proxy 502 yerine anlamlı cevap
+        logger.exception("PMS randevu import hatası")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Randevu import başarısız: {type(exc).__name__}: {exc}"[:300],
+        ) from exc
 
 
 @router.post(

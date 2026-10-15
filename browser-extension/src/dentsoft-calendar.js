@@ -384,7 +384,10 @@ export async function fetchDentsoftPatientCards(baseUrl, patientIds, options) {
         full_name: fullName.slice(0, 255),
         phone: card.phone ? String(card.phone).slice(0, 20) : null,
         email: card.email ? String(card.email).slice(0, 255) : null,
-        national_id: card.nationalId ? String(card.nationalId).replace(/\D/g, '').slice(0, 11) : null,
+        national_id: (() => {
+          const tc = card.nationalId ? String(card.nationalId).replace(/\D/g, '') : '';
+          return tc.length === 11 ? tc : null;
+        })(),
         birth_date: card.birthDate ? String(card.birthDate).slice(0, 16) : null,
         sex: mapSex(card.sex),
         address: card.address ? String(card.address).slice(0, 500) : null,

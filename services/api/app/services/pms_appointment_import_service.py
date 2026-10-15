@@ -125,12 +125,8 @@ class _PatientResolver:
         self.has_ext: set[str] = set()
 
     async def load(self) -> None:
-        rows = await self.db.execute(
-            text("SELECT id, full_name, phone, external_id FROM patients WHERE clinic_id = CAST(:cid AS UUID)"),
-            {"cid": self.cid},
-        )
-        for r in rows.mappings().all():
-            self._remember(str(r["id"]), r["full_name"] or "", r["phone"], r["external_id"])
+        # Tüm klinik hastalarını belleğe alma — 502/timeout riski. resolve() ihtiyaç oldukça sorgular.
+        return
 
     def _remember(self, pid: str, full_name: str, phone: str | None, external_id: str | None) -> None:
         self.by_key[_patient_key(full_name, phone)] = pid
@@ -144,11 +140,54 @@ class _PatientResolver:
             return self.by_ext[external_id]
 
         phone = _normalize_phone(raw_phone)
+
+        if external_id:
+            row = await self.db.execute(
+                text("""
+                    SELECT id, full_name, phone, external_id FROM patients
+                    WHERE clinic_id = CAST(:cid AS UUID) AND external_id = :ext
+                    LIMIT 1
+                """),
+                {"cid": self.cid, "ext": external_id},
+            )
+            hit = row.mappings().first()
+            if hit:
+                self._remember(str(hit["id"]), hit["full_name"] or "", hit["phone"], hit["external_id"])
+                if phone and not hit["phone"]:
+                    await self.db.execute(
+                        text("UPDATE patients SET phone = :phone WHERE id = CAST(:pid AS UUID) AND (phone IS NULL OR phone = '')"),
+                        {"phone": phone, "pid": str(hit["id"])},
+                    )
+                return str(hit["id"])
+
         pid = self.by_key.get(_patient_key(name, phone))
         if not pid:
             candidates = self.by_name.get(name.strip().lower(), [])
             if len(candidates) == 1:
                 pid = candidates[0]
+
+        if not pid:
+            # İsim (+ telefon) ile tek eşleşme ara — tüm tabloyu yüklemeden.
+            rows = await self.db.execute(
+                text("""
+                    SELECT id, full_name, phone, external_id FROM patients
+                    WHERE clinic_id = CAST(:cid AS UUID)
+                      AND lower(trim(full_name)) = lower(trim(:name))
+                    LIMIT 5
+                """),
+                {"cid": self.cid, "name": name.strip()},
+            )
+            matches = list(rows.mappings().all())
+            if phone:
+                for m in matches:
+                    if _normalize_phone(m["phone"]) == phone:
+                        pid = str(m["id"])
+                        self._remember(pid, m["full_name"] or "", m["phone"], m["external_id"])
+                        break
+            if not pid and len(matches) == 1:
+                m = matches[0]
+                pid = str(m["id"])
+                self._remember(pid, m["full_name"] or "", m["phone"], m["external_id"])
 
         if pid:
             if external_id and pid not in self.has_ext:
