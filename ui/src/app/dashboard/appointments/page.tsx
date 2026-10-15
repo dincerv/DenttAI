@@ -985,7 +985,7 @@ function computeOverlapLayout(appts: Appointment[]): LayoutInfo[] {
   return result;
 }
 
-/* ── Appointment block — Dentsoft takvim kutusu gibi ───── */
+/* ── Appointment block — Dentsoft: Hasta | Tedavi | Not + hekim ─ */
 function ApptBlock({
   appt, colorIdx, onClick, colIndex = 0, colCount = 1,
 }: {
@@ -995,18 +995,24 @@ function ApptBlock({
   const dt = parseISO(appt.scheduled_at);
   const top = ((dt.getHours() * 60 + dt.getMinutes()) - HOUR_START * 60) / 30 * SLOT_HEIGHT;
   const duration = Math.max(15, appt.duration_minutes ?? 30);
-  const heightPx = Math.max(28, (duration / 30) * SLOT_HEIGHT - 2);
   const style = STATUS_BLOCK[appt.status] ?? STATUS_BLOCK.scheduled;
   const doctorTint = DOCTOR_COLORS[colorIdx % DOCTOR_COLORS.length];
   const isCancelled = appt.status === 'cancelled';
   const widthPct = 100 / colCount;
   const leftPct = colIndex * widthPct;
-  const titleBits = [
-    appt.patient_name ?? 'Hasta',
-    appt.type,
-    appt.notes,
-    STATUS_LABELS[appt.status],
-  ].filter(Boolean);
+
+  const patientLine = appt.patient_name ?? 'Hasta';
+  const treatment = appt.type?.trim() || null;
+  const note = appt.notes?.trim() || null;
+  const doctor = appt.doctor_name?.trim() || null;
+  const phone = appt.patient_phone?.trim() || null;
+
+  // İçerik satır sayısına göre minimum yükseklik (Dentsoft’ta kutu bilgileri gösterir)
+  const lineCount = 1 + (doctor ? 1 : 0) + (treatment ? 1 : 0) + (note ? 1 : 0) + (phone ? 1 : 0);
+  const contentMin = 14 + lineCount * 13;
+  const heightPx = Math.max(contentMin, (duration / 30) * SLOT_HEIGHT - 2);
+
+  const titleBits = [patientLine, doctor, treatment, note, phone, STATUS_LABELS[appt.status]].filter(Boolean);
 
   return (
     <button
@@ -1015,7 +1021,7 @@ function ApptBlock({
       style={{
         top: `${top}px`,
         height: `${heightPx}px`,
-        minHeight: '28px',
+        minHeight: `${contentMin}px`,
         left: `calc(${leftPct}% + 1px)`,
         width: `calc(${widthPct}% - 2px)`,
         boxShadow: `inset 3px 0 0 0 ${doctorTint.hex}`,
@@ -1023,21 +1029,24 @@ function ApptBlock({
       title={titleBits.join(' | ')}
     >
       <div className={`absolute left-0 top-0 bottom-0 w-1 ${style.bar}`} />
-      <div className="pl-2.5 h-full flex flex-col gap-0.5 overflow-hidden">
-        <p className={`text-[10px] font-bold ${style.text} leading-tight truncate ${isCancelled ? 'line-through' : ''}`}>
-          {format(dt, 'HH:mm')} {appt.patient_name ?? 'Hasta'}
+      <div className="pl-2.5 h-full flex flex-col gap-0 overflow-hidden leading-tight">
+        <p className={`text-[10px] font-bold ${style.text} truncate ${isCancelled ? 'line-through' : ''}`}>
+          {format(dt, 'HH:mm')} {patientLine}
           {appt.is_new_patient ? (
             <span className="ml-1 rounded px-0.5 text-[8px] font-semibold bg-emerald-600 text-white">Yeni</span>
           ) : null}
         </p>
-        {heightPx >= 36 && appt.type && (
-          <p className={`text-[9px] ${style.text} opacity-80 truncate`}>{appt.type}</p>
+        {doctor && (
+          <p className={`text-[9px] ${style.text} opacity-75 truncate`}>Dr. {doctor.replace(/^dr\.?\s*/i, '')}</p>
         )}
-        {heightPx >= 52 && appt.notes && (
-          <p className={`text-[8px] ${style.text} opacity-60 truncate`}>{appt.notes}</p>
+        {treatment && (
+          <p className={`text-[9px] ${style.text} opacity-80 truncate`}>{treatment}</p>
         )}
-        {heightPx >= 68 && appt.patient_phone && (
-          <p className={`text-[8px] ${style.text} opacity-50 truncate`}>{appt.patient_phone}</p>
+        {note && (
+          <p className={`text-[8px] ${style.text} opacity-60 truncate`}>{note}</p>
+        )}
+        {phone && (
+          <p className={`text-[8px] ${style.text} opacity-50 truncate`}>{phone}</p>
         )}
       </div>
     </button>
