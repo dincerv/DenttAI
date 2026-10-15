@@ -333,9 +333,27 @@ async def import_pms_appointments(
             result.skipped_invalid += 1
             _add_error(result, f"Randevu {a.external_id}: {exc.orig}")
 
+    # Telefonsuz hastaya bagli randevulari ayni isimli telefonlu kayda tasi.
+    await db.execute(
+        text("""
+            UPDATE appointments AS a
+            SET patient_id = twin.id, updated_at = NOW()
+            FROM patients AS empty
+            JOIN patients AS twin
+              ON twin.clinic_id = empty.clinic_id
+             AND lower(trim(twin.full_name)) = lower(trim(empty.full_name))
+             AND twin.phone IS NOT NULL AND BTRIM(twin.phone) <> ''
+             AND twin.id <> empty.id
+            WHERE a.clinic_id = CAST(:cid AS UUID)
+              AND a.patient_id = empty.id
+              AND (empty.phone IS NULL OR BTRIM(empty.phone) = '')
+        """),
+        {"cid": cid},
+    )
+
     await db.commit()
     logger.info(
-        "PMS randevu import tamamlandÄ±",
+        "PMS randevu import tamamlandi",
         extra={
             "clinic_id": cid,
             "source": source,
